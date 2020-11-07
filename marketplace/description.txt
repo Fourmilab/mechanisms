@@ -1,0 +1,29 @@
+Fourmilab Mechanisms is a collection of scripts which implement a fundamental component of three-dimensional model building which is absent from Second Life's standard script programming environment: hierarchical mechanisms.  In Second Life, a “link set” may be composed of multiple objects, but link sets cannot be nested.  It isn't possible, for example, to model a car whose doors are child objects of the car and which, in turn, have handles and windows which belong to each door.  Fourmilab Mechanisms allows you to build objects with complexity and levels of hierarchy limited only by Second Life's memory limits on scripts.  When an component of a mechanism is moved or rotated, all of its child components will be automatically adjusted to their new corresponding positions.
+
+A small and simple Application Programming Interface (API) is provided which you include in your own script(s).  It calls the main Fourmilabs Mechanisms facilities supplied in separate scripts, which do not subtract from the memory available to your own script.  The structure of a mechanism is defined in a text Notecard and can be easily adjusted as you build and modify your mechanism.  Facilities are provided to automate smooth rotation and movement of multiple components of mechanisms, including their child components.
+
+Complete, ready-to-run examples of mechanisms built using Fourmilab Mechanisms which illustrate its facilities are included.  The Land Impact (LI) of each model is listed.
+
+    •  Three-axis nested gimbal assembly (LI 12)
+    •  Swinging door and frame with movable handle on a turntable (LI 12)
+    •  Two “marble machines” with tilting tables and physical rolling marbles (LI 15 and 18)
+    •  The “Blobby Man”: a fully-articulated avatar-like animated mannequin built from basic prims (LI 43)
+
+Land Impact and Permissions
+
+Fourmilab Mechanisms is a collection of scripts which you add to your builds.  As such, it has no land impact, and does not increase the land impact of objects to which you add it.  The example mechanisms do require land (property you own or whose owner allows you to build objects, or a public sandbox that allows scripts) and have land impact as listed in the table above.  Note that you do not need any of these example mechanisms in order to use Fourmilab Mechanisms in your own builds.
+
+Development Kit
+
+Fourmilab Mechanisms is delivered including a development kit containing all of the object components, models, textures, scripts, sound clips, and documents used in the objects.  All items including scripts, have “full permissions” (copy, modify, and transfer), so that you can use them as the basis for your own development projects and/or share them with other users in Second Life.
+
+Source code for this project is maintained on and available from the GitHub repository:
+    https://github.com/Fourmilab/mechanisms
+
+License
+----------
+
+This product (software, documents, images, and original models) is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+    http://creativecommons.org/licenses/by-sa/4.0/
+    https://creativecommons.org/licenses/by-sa/4.0/legalcode
+You are free to copy and redistribute this material in any medium or format, and to remix, transform, and build upon the material for any purpose, including commercially.  You must give credit, provide a link to the license, and indicate if changes were made.  If you remix, transform, or build upon this material, you must distribute your contributions under the same license as the original.

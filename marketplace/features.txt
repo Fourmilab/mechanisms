@@ -1,0 +1,9 @@
+Hierarchical mechanisms, defined by notecard
+
+Complexity and levels of hierarchy limited only by script memory
+
+Child objects move and rotate automatically with parent object
+
+Automated smooth motion and rotation of multiple components
+
+Five example mechanisms included
