@@ -1,6 +1,6 @@
 # Fourmilab Mechanisms
 
-![Fourmilab Mechanisms](marketplace/images/mech1.png)
+![Fourmilab Mechanisms](marketplace/images/mechanisms_2.png)
 
 [Fourmilab Mechanisms](https://marketplace.secondlife.com/p/Fourmilab-Mechanisms/20515612)
 
@@ -10,7 +10,7 @@ notecards, and development documentation, tools, and resources
 used the model and its development.  The actual model is built
 within Second Life and these components are installed within it.
 
-![Fourmilab Mechanisms](marketplace/images/mech2.png)
+![Fourmilab Mechanisms](marketplace/images/mechanisms_1.png)
 
 The
 [complete package](https://marketplace.secondlife.com/p/Fourmilab-Mechanisms/20515612)
@@ -22,9 +22,13 @@ model as they wish.  The model is delivered with "full permissions":
 those who obtain it are free to copy, modify, and transfer it to
 other users within Second Life.
 
+![Fourmilab Mechanisms](marketplace/images/mechanisms_14.png)
+
 All of this software is licensed under the Creative Commons
 Attribution-ShareAlike license.  Please see LICENSE.md in this
 repository for details.
+
+![Fourmilab Mechanisms](marketplace/images/mechanisms_5.png)
 
 ## About symbolic links
 
