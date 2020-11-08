@@ -1,0 +1,2178 @@
+
+                        Fourmilab Mechanisms
+
+                             Development Log
+
+2020 August 11
+
+Built the original three-axis nested gimbal ring object as a test
+case,  These are the original parameters, which have been adjusted
+as development evolved.  To make things easier to understand when
+running test cases, I ended up turning the object so that the local
+axes of its root prim align with those of the region.
+
+    Generic ring:   "Ring"
+        Position    <157, 155, 1101>
+        Size        <0.01, 1, 1>
+        Rotation    <0, 0, 0>
+        Hole size   <1, 0.05>
+
+    Generic pivot bottom cylinder:  "Pivot A"
+        Position    <157, 155, 1100.475>
+        Size        <0.05, 0.05, 0.1>
+        Rotation    <0, 0, 0>
+
+    Generic pivot bottom cylinder:  "Pivot B"
+        Position    <157, 155, 1100.525>
+        Size        <0.05, 0.05, 0.1>
+        Rotation    <0, 0, 0>
+
+    Linked Generic objects together with ring as root prim.
+    Copied and rotated to create X ring, "X Ring", with:
+        Position    <157, 153, 1101>
+        Size        <0.01, 1, 1>
+        Rotation    <0, 90, 0>
+    "Y Ring":
+        Position    <157, 153, 1101>
+        Size        <0.01, 0.82, 0.82>
+        Rotation    <90, 0, 0>
+    "Z Ring":
+        Position    <157, 153, 1101>
+        Size        <0.01, 0.67, 0.67>
+        Rotation    <0, 90, 0>
+
+    Note that rings are labeled by the axis in which their pivots
+    lie in the starting position.
+
+    Frame:
+        "Frame -X":
+        Position    <156.4, 153, 1100.51>
+        Size        <0.05, 0.11, 1.05>
+        Rotation    <0, 0, 0>
+
+        "Frame +X":
+        Position    <157.7  , 153, 1100.51>
+        Size        <0.05, 0.11, 1.05>
+        Rotation    <0, 0, 0>
+
+        "Frame Base":
+        Position    <157.7  , 153, 1100.51>
+        Size        <0.05, 0.11, 1.05>
+        Rotation    <0, 0, 0>
+
+2020 August 14
+
+When rotating an arbitrary prim, need to transform rotation from its
+local coords to the local coords of each of its dependencies.  Work
+from inside out in dependency graph.
+
+In the interests of concision and precision, let's define the
+co-ordinate systems and abbreviations we use in discussing mechanisms.
+
+    GCS     “Grid co-ordinate system”: this is the global co-ordinate
+            system which uniquely identifies a point within the Second
+            Life grid.  It is composed of a location within the X-Y-Z
+            Region co-ordinate system (RCS) with the X and Y
+            co-ordinates containing the absolute location of the region
+            within the grid, multiplied by 256 (the region size in
+            metres).  As all operations on mechanisms occur within a
+            single region, the GCS plays no part and is mentioned only
+            for completeness.
+
+    RCS     “Region co-ordinate system”: this co-ordinate system
+            identifies locations within a region, with the X and Y
+            co-ordinates greater than or equal to zero and less than
+            256, and the Z co-ordinate greater than equal to zero and
+            extending upward to the point (around 4000 metres) where
+            positions become unreliable due to round-off in Second
+            Life's single-precision arithmetic.  Every object with a
+            region has a position and rotation within the RCS.  As
+            Fourmilab Mechanisms deals only with objects within link
+            sets, the RCS does not figure in its operation although, of
+            course, any component of a mechanism has a position and
+            orientation in the RCS which can be determined by
+            transforming its local co-ordinate system (LCS) position
+            and orientation into the RCS.
+
+    LCS     “Local co-ordinate system”: for multiple objects linked
+            together into a link set, this is the co-ordinate system
+            defined by the position and rotation of the “root prim” of
+            the set, which always has link number 1.  When objects are
+            linked, they move and rotate together, so that moving or
+            rotating the root prim moves and rotates all linked prims
+            as a rigid object.  Fourmilab Mechanisms operates by
+            adjusting positions and orientations of objects within the
+            LCS according the the relationships you declare among the
+            components.
+
+    PCS     "Parent co-ordinate system": is a concept which does not
+            exist in standard Second Life but is defined and
+            implemented by Fourmilab Mechanisms.  It works exactly like
+            the relationship between the root prim of a link set and
+            other linked objects, but unlike that relationship, which
+            is a single level, Fourmilab Mechanisms allows arbitrarily
+            complex and hierarchical structure. Members of a link set
+            may be declared “dependent” upon another member, its
+            “parent”.  When the parent object moves within the link set
+            (in LCS), all objects dependent upon it will move as if
+            rigidly attached to it.  Any number of objects may be
+            dependent on a single parent (but only one parent), and
+            dependent objects may, in turn, be the parents of objects
+            dependent upon them.  Moving or rotating a dependent object
+            within the LCS does not affect its parent, but does affect
+            any objects with are dependent on it (in other words, those
+            for which it is the parent).  The depth and complexity of
+            dependency chains is limited only by script memory, which
+            is rarely a constraint, since the number of objects in a
+            link set is limited to 256.
+
+When manipulating components of a link set managed by Fourmilab
+Mechanisms, you must use its functions to move and rotate them.  If you
+use the standard Second Life API calls, such as
+llSetLinkPrimitiveParamsFast() with PRIM_POS_LOCAL or PRIM_ROT_LOCAL,
+the component will move but will have no effect on dependent links.
+
+To declare dependency relationships among components use one or
+more configuration statements of the form:
+    set dependent "parent1" "dep1" "dep2" "dep3"...
+where the first argument is the object name of the parent (which must
+be quoted if it contains spaces) and the following arguments name the
+objects dependent on it.  You may specify the objects dependent on a
+given parent in one or more “set dependent” statements: it doesn't
+matter.  If, for example, two more objects are dependent upon "dep2",
+you'd declare them with:
+    set dependent "dep2" "dep8" "dep9"
+As they are processed, “set dependent” declarations are checked to
+verify they don't specify any undefined objects or create a circular
+set of dependencies.  In case of error, a message is sent to the
+object's owner on local chat and Fourmilab Mechanisms is disabled until
+the error is corrected and the script reset.
+
+2020 August 20
+
+The key to hierarchical components is that co-ordinate systems are
+relative to the parent component upon which a given component is
+dependent.  To get the position and rotation of a component relative
+to its parent, use:
+    flGetCompPos(linkno)
+    flGetCompRot(linkno)
+These return position and rotation relative to the parent, and do not
+change as long as the component moves rigidly with the parent.  If the
+linkno has no parent (i.e. is a child of the root prim of the link
+set), its position and rotation in the link set's local co-ordinate
+system is returned (the same as returned by PRIM_POS_LOCAL and
+PRIM_ROT_LOCAL).
+
+To set the position and rotation of a component relative to its parent,
+use:
+    flSetCompPos(linkno, <x,y,z>)
+    flSetCompRot(linkno, <x,y,z,s>)
+Updating the position or rotation of a component adjusts the position
+and rotation of all its dependencies in rigid motion with respect to
+the component that moved.  Note that these set the absolute position
+and rotation within the parent co-ordinate system; if you wish a
+relative change, retrieve the current value with flGetComp...() and
+compose your delta with it.
+
+To obtain the link number of a component from its name:
+    flGetCompLink(compname)
+If the component name is not found, -1 is returned.  The name must
+match exactly: upper and lower case letters and spaces are significant.
+
+To obtain the link number of the parent component of a link, use:
+    flGetCompParent(linkno)
+If the component has no parent, -1 is returned.  The root prim of a
+link set never has a parent, but other components within the link set
+may also not have parents, either because they are not part of a
+mechanism or are at the top level of mechanism(s) within the link set.
+
+To obtain a list of all links dependent upon a component (with
+transitive closure), use:
+    flGetCompChildren(linkno)
+If the component has no children, an empty list is returned.
+
+2020 August 21
+
+Here is a demonstration of operations by manual steps.  This uses
+temporary low-level commands which will be removed once debugging is
+complete.
+
+    pa                      # Reset to ground state
+
+    #   List components in ground state
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <0, 0, 90>
+            Parent link 10 co-ords pos <0, 0, 0> rot <0, -90, 90>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <0, 90, 0>
+            Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+            Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+
+    #   Crank in rotations from inside to outside, ZY = LCS rotation
+    zy 4 <33,0,0>
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <33, -0.00001, 90>
+            Parent link 10 co-ords pos <0, 0, 0> rot <90.00002, -57.00001, -180>
+    zu 4 <90.00002, -57.00001, -180>    # Test identity of parent -> LCS transform
+        Rotation in parent link (10) co-ords <32.99999, 0, 90>
+    zo 4 <32.99999, 0, 90>              # verify it's an identity
+
+    zy 10 <0,46,0>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <180, 46, 180>
+            Parent link 7 co-ords pos <0, 0, 0> rot <180, 46, 180>
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <42.07517, 35.6329, 62.25781>
+            Parent link 10 co-ords pos <0, 0, 0> rot <90, -57.00001, -180>
+    zu 10 <180, 46, 180>
+    zo 10 <180, 46, 180>
+
+    zy 7 <0,0,55>
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 55>
+            Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 55>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-139.6935, 24.36804, 115.9385>
+            Parent link 7 co-ords pos <0, 0, 0> rot <180, 46.00001, 180>
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <-15.282, 51.2882, 138.7209>
+            Parent link 10 co-ords pos <0, 0, 0> rot <90, -57.00001, -180>
+
+    #   Test ZL (transform component to LCS) with identity rotation
+    zl 4 <0,0,0>
+        Rotation in LCS <-15.282, 51.2882, 138.7209>
+    zl 10 <0,0,0>
+        Rotation in LCS <-139.6935, 24.36804, 115.9385>
+    zl 7 <0,0,0>
+        Rotation in LCS <0, 0, 55>
+
+2020 August 23
+
+Test case desired end state accomplished by:
+
+    pa
+
+    zy 4 <30,0,0>
+    zy 10 <0,30,0>
+    zy 7 <0,0,30>
+
+After this, we have:
+
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <16.10212, 38.68219, 106.1021>
+        Parent link 10 co-ords pos <0, 0, 0> rot <90.00002, -60.00003, -180>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-139.1066, 48.59038, 130.8934>
+        Parent link 7 co-ords pos <0, 0, 0> rot <180, 60, 180>
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+
+Now, let's try it with "zb", outside in.
+
+    pa
+
+    zb 7 <0,0,30>
+  after which:
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 30>  CORRECT
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-90, 60, 90>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>  CORRECT
+
+    zb 10 <0,60,0>
+        flSetCompRot(linkno=10, newrot=<0, 60, 0>):
+            Parent link 7, rotation <0, 0, 30>
+            Current position in LCS <-0.99231, 0, 0.00726>, rotation <-90, 60, 90>
+            Current component rotation in parent co-ordinates <0, 90, 0>
+            Delta rotation (curcomprot to newrot) <0, -29.99999, 0>
+            Delta rotation in LCS <-16.1021, -25.65891, -33.69005>
+        adjustComponent(linkno=10, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<-16.1021, -25.65891, -33.69005>)
+            adjustComponent: Vector from pivot to target <0, 0, 0>
+            adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+            adjustComponent: Link 10 new pos <-0.99231, 0, 0.00726> rot <-7.63074, 64.09491, -7.63074>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-7.63074, 64.09491, -7.63074>
+            Parent link 7 co-ords pos <0, 0, 0> rot <42.69613, 53.90222, -64.89175>
+
+So, where we're going wrong is transforming the delta rotation
+(curcomprot to newrot) in the link 10 PCS to the LCS.
+
+Fail:
+    pa
+
+    zy 7 <0,0,90>
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-90, 0.00001, 90>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>
+    zb 10 <0,60,0>
+        flSetCompRot(linkno=10, newrot=<0, 60, 0>):
+            Current component rotation on LCS <-90, 0.00001, 90>
+            New component rotation in LCS <-60, 0.00001, 90>
+            Delta rotation in LCS <0, -29.99999, 0>
+            Transform current rotation back to by deltarotlcs <-60, 0.00002, 89.99998>
+        adjustComponent(linkno=10, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, -29.99999, 0>)
+            adjustComponent: Vector from pivot to target <0, 0, 0>
+            adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+            adjustComponent: Link 10 new pos <-0.99231, 0, 0.00726> rot <-63.43494, -14.47749, 63.43494>
+                                                                        ********************************  WRONG
+
+Current test:
+    pa
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <0, 0, 90>
+        Parent link 10 co-ords pos <0, 0, 0> rot <0, -90, 90>
+    calc {30, 0, 0} * {0, -90, 90}
+        {30, 0, 0} * {0, -90, 90} = {-0.00001, -60, 90}
+    zb 4 <0,-60,90>
+    zq 4
+        Link 4 pos <-0.99231, 0, 0.00726> rot <30, 0, 90>
+        Parent link 10 co-ords pos <0, 0, 0> rot <90.00001, -60, -180>
+    zb 4 <90.00001, -60, -180>      # Test identity transform
+
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+    zb 7 <0,0,30>
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+    zb 7 <0,0,30>                   # Test identity transform
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-89.99997, 60.00001, 89.99997>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>
+    calc {0,30,0} * {0, 90, 0}
+        {0, 30, 0} * {0, 90, 0} = {180, 60, 180}
+    zb 10 <180, 60, 180>        FAIL
+
+Demonstration of failure:
+    pa
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+    zb 7 <0,0,45>
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-90.00001, 45, 90.00001>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>
+
+2020 August 24
+
+Added RX, RY, and RZ commands to simplify testing of rotation of the
+X, Y, and Z gimbal rings.
+
+    pa
+    rx 30
+        Link 7 current rot <0, 0, 0>
+          New rot <0, 0, 30>
+        flSetCompRot(linkno=7, newrot=<0, 0, 30>):
+          Parent link -1, rotation <0, 0, 0>
+          Current component rotation on LCS <0, 0, 0>
+          New component rotation in LCS <0, 0, 30>
+          Delta rotation in LCS <0, 0, 30>
+          Transform current rotation back to new by deltarotlcs <0, 0, 30>
+        adjustComponent(linkno=7, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0, 0.00726> rot <0, 0, 0>
+          adjustComponent: Vector from pivot to target <0, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+          vRotNew alt value <0, 0, 30>
+          adjustComponent: Link 7 new pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+        adjustComponent(linkno=8, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0, 0.53229> rot <0, 0, 0>
+          adjustComponent: Vector from pivot to target <0, 0, 0.52503>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0.52503>
+          vRotNew alt value <0, 0, 30>
+          adjustComponent: Link 8 new pos <-0.99231, 0, 0.53229> rot <0, 0, 30>
+        adjustComponent(linkno=9, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0, -0.51776> rot <0, 0, 0>
+          adjustComponent: Vector from pivot to target <0, 0, -0.52502>
+          adjustComponent: Vector from pivot to target rotated <0, 0, -0.52502>
+          vRotNew alt value <0, 0, 30>
+          adjustComponent: Link 9 new pos <-0.99231, 0, -0.51776> rot <0, 0, 30>
+        adjustComponent(linkno=10, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0, 0.00726> rot <0, 90, 0>
+          adjustComponent: Vector from pivot to target <0, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+          vRotNew alt value <0, 90, 30>
+          adjustComponent: Link 10 new pos <-0.99231, 0, 0.00726> rot <-90, 60, 90>
+        adjustComponent(linkno=4, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0, 0.00726> rot <0, 0, 90>
+          adjustComponent: Vector from pivot to target <0, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+          vRotNew alt value <0, 0, 120>
+          adjustComponent: Link 4 new pos <-0.99231, 0, 0.00726> rot <0, 0, 120>
+        adjustComponent(linkno=5, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-1.34461, 0, 0.00726> rot <0, -90, 0>
+          adjustComponent: Vector from pivot to target <-0.3523, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <-0.3051, -0.17615, 0>
+          vRotNew alt value <0, -90, 30>
+          adjustComponent: Link 5 new pos <-1.29741, -0.17615, 0.00726> rot <90, -60, 90>
+        adjustComponent(linkno=6, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.64002, 0, 0.00726> rot <0, -90, 0>
+          adjustComponent: Vector from pivot to target <0.35229, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0.30509, 0.17615, 0>
+          vRotNew alt value <0, -90, 30>
+          adjustComponent: Link 6 new pos <-0.68722, 0.17615, 0.00726> rot <90, -60, 90>
+        adjustComponent(linkno=11, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, -0.43085, 0.00726> rot <90, 0, 0>
+          adjustComponent: Vector from pivot to target <0, -0.43085, 0>
+          adjustComponent: Vector from pivot to target rotated <0.21543, -0.37313, 0>
+          vRotNew alt value <90, 0, 30>
+          adjustComponent: Link 11 new pos <-0.77689, -0.37313, 0.00726> rot <90, 30, 0>
+        adjustComponent(linkno=12, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 0, 30>)
+          adjustComponent: Current pos <-0.99231, 0.43085, 0.00726> rot <90, 0, 0>
+          adjustComponent: Vector from pivot to target <0, 0.43085, 0>
+          adjustComponent: Vector from pivot to target rotated <-0.21543, 0.37313, 0>
+          vRotNew alt value <90, 0, 30>
+          adjustComponent: Link 12 new pos <-1.20774, 0.37313, 0.00726> rot <90, 30, 0>
+          Confirming new rot <0, 0, 30>
+
+    st ex
+          1. Mechanism  <156.4964, 136.9526, 1100.623> <0, 0, 0> Fwd <1, 0, 0> Up <0, 0, 1> Left <0, 1, 0>
+          2. Frame +X  <-0.50232, 0, 0.60727> <0, -90, 0> Fwd <0, 0, 1> Up <-1, -0, 0> Left <-0, 1, 0>
+          3. Frame -X  <-0.50232, 0, -0.59274> <0, -90, 0> Fwd <0, 0, 1> Up <-1, -0, 0> Left <-0, 1, 0>
+          4. Z Ring  (10: Y Ring)  <-0.99231, 0, 0.00726> <0, 0, 120> Fwd <-0.5, 0.86603, 0> Up <0, 0, 1> Left <-0.86603, -0.5, 0> Par <0, -90, 90> Ch 5, 6
+          5. Z Pivot B  (4: Z Ring)  <-1.29741, -0.17615, 0.00726> <90, -60, 90> Fwd <0, 0, 1> Up <-0.86603, -0.5, 0> Left <-0.5, 0.86603, 0> Par <-90, -0.00001, -90>
+          6. Z Pivot A  (4: Z Ring)  <-0.68722, 0.17615, 0.00726> <90, -60, 90> Fwd <0, 0, 1> Up <-0.86603, -0.5, 0> Left <-0.5, 0.86603, 0> Par <-90, -0.00001, -90>
+          7. X Ring  <-0.99231, 0, 0.00726> <0, 0, 30> Fwd <0.86603, 0.5, 0> Up <0, 0, 1> Left <-0.5, 0.86603, 0> Ch 4, 5, 6, 8, 9, 10, 11, 12
+          8. X Pivot B  (7: X Ring)  <-0.99231, 0, 0.53229> <0, 0, 30> Fwd <0.86603, 0.5, 0> Up <0, 0, 1> Left <-0.5, 0.86603, 0> Par <0, 0, 0>
+          9. X Pivot A  (7: X Ring)  <-0.99231, 0, -0.51776> <0, 0, 30> Fwd <0.86603, 0.5, 0> Up <0, 0, 1> Left <-0.5, 0.86603, 0> Par <0, 0, 0>
+          10. Y Ring  (7: X Ring)  <-0.99231, 0, 0.00726> <-90, 60, 90> Fwd <0, 0, -1> Up <0.86603, 0.5, 0> Left <-0.5, 0.86603, 0> Par <0, 90, 0> Ch 4, 5, 6, 11, 12
+          11. Y Pivot B  (10: Y Ring)  <-0.77689, -0.37313, 0.00726> <90, 30, 0> Fwd <0.86603, 0.5, 0> Up <0.5, -0.86603, 0> Left <0, 0, 1> Par <90, -0.00001, 90>
+          12. Y Pivot A  (10: Y Ring)  <-1.20774, 0.37313, 0.00726> <90, 30, 0> Fwd <0.86603, 0.5, 0> Up <0.5, -0.86603, 0> Left <0, 0, 1> Par <90, -0.00001, 90>
+
+    zq 7
+        Link 7 pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+        Parent link -1 co-ords pos <-0.99231, 0, 0.00726> rot <0, 0, 30>
+
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-90, 60, 90>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 90, 0>
+
+    zu 10 <0,0,0>
+        Rotation in parent link (7) co-ords <0, 0, 30>
+
+    zu 10 <0,30,0>
+        Rotation in parent link (7) co-ords <-16.10211, 25.6589, 33.69007>
+
+    zo 10 <-16.10211, 25.6589, 33.69007>
+        (Rotates to proper position.)
+
+    zq 10
+        Link 10 pos <-0.99231, 0, 0.00726> rot <-16.10211, 25.6589, 33.69007>
+        Parent link 7 co-ords pos <0, 0, 0> rot <0, 29.99999, 0.00001>
+
+    pa
+    rx 30
+
+    ry 30
+        Link 10 current rot <0, 90, 0>
+          New rot <-180, 60.00001, 180>
+        flSetCompRot(linkno=10, newrot=<-180, 60.00001, 180>):
+          Parent link 7, rotation <0, 0, 30>
+          Current component rotation on LCS <-90, 60, 90>
+          New component rotation in LCS <-139.1066, 48.59039, 130.8934>
+          Delta rotation in LCS <0, 30, 0>
+          Transform current rotation back to new by deltarotlcs <-139.1066, 48.59039, 130.8934>
+        adjustComponent(linkno=10, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-0.99231, 0, 0.00726> rot <-90, 60, 90>
+          adjustComponent: Vector from pivot to target <0, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+          vRotNew alt value <-139.1066, 48.59039, 130.8934>
+          adjustComponent: Link 10 new pos <-0.99231, 0, 0.00726> rot <-130.8934, 48.59041, 139.1066>
+        adjustComponent(linkno=4, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-0.99231, 0, 0.00726> rot <0, 0, 120>
+          adjustComponent: Vector from pivot to target <0, 0, 0>
+          adjustComponent: Vector from pivot to target rotated <0, 0, 0>
+          vRotNew alt value <-26.56506, -14.47751, 116.565>
+          adjustComponent: Link 4 new pos <-0.99231, 0, 0.00726> rot <0, 30, 120>
+        adjustComponent(linkno=5, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-1.29741, -0.17615, 0.00726> rot <90, -60, 90>
+          adjustComponent: Vector from pivot to target <-0.3051, -0.17615, 0>
+          adjustComponent: Vector from pivot to target rotated <-0.26422, -0.17615, 0.15255>
+          vRotNew alt value <40.89336, -48.59038, 49.10657>
+          adjustComponent: Link 5 new pos <-1.25654, -0.17615, 0.15981> rot <49.10658, -48.59038, 40.89336>
+        adjustComponent(linkno=6, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-0.68722, 0.17615, 0.00726> rot <90, -60, 90>
+          adjustComponent: Vector from pivot to target <0.30509, 0.17615, 0>
+          adjustComponent: Vector from pivot to target rotated <0.26422, 0.17614, -0.15255>
+          vRotNew alt value <40.89336, -48.59038, 49.10657>
+          adjustComponent: Link 6 new pos <-0.72809, 0.17614, -0.14529> rot <49.10658, -48.59038, 40.89336>
+        adjustComponent(linkno=11, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-0.77689, -0.37313, 0.00726> rot <90, 30, 0>
+          adjustComponent: Vector from pivot to target <0.21543, -0.37313, 0>
+          adjustComponent: Vector from pivot to target rotated <0.18656, -0.37313, -0.10771>
+          vRotNew alt value <89.99997, 59.99998, 0.00002>
+          adjustComponent: Link 11 new pos <-0.80575, -0.37313, -0.10045> rot <106.1021, 25.65891, -33.69004>
+        adjustComponent(linkno=12, pivot=<-0.99231, 0, 0.00726>, trans=<0, 0, 0>, turot=<0, 30, 0>)
+          adjustComponent: Current pos <-1.20774, 0.37313, 0.00726> rot <90, 30, 0>
+          adjustComponent: Vector from pivot to target <-0.21543, 0.37313, 0>
+          adjustComponent: Vector from pivot to target rotated <-0.18656, 0.37313, 0.10771>
+          vRotNew alt value <89.99997, 59.99998, 0.00002>
+          adjustComponent: Link 12 new pos <-1.17887, 0.37313, 0.11497> rot <106.1021, 25.65891, -33.69004>
+          Confirming new rot <-172.3693, 64.09495, -172.3692>
+
+2020 August 25
+
+Essential references for understanding rotations and co-ordinate system
+transformations are:
+    http://wiki.secondlife.com/wiki/User:Timmy_Foxclaw/About_Coordinate_Systems_and_Rotations
+    http://wiki.secondlife.com/wiki/Rotation
+
+After many missteps and flawed conceptual approaches, I finally
+achieved initial operating capability today (2020-08-25) around 14:30
+UTC.  At the moment, I have a monolithic script, mechanism.lsl, which
+includes both the hierarchical mechanism logic and the test program and
+support facilities for it.  Due to having grown like Topsy (or, perhaps
+more precisely, "Oopsie!"), it is now using 88% of the available memory
+for a single script.  This should come down dramatically as diagnostic
+and test code is banished to other scripts.
+
+I still haven't decided whether Mechanisms should be packaged as a
+script which people include in their own scripts, or as a separate
+script with a small API which communicates with it via link messages
+or, perhaps, both as options.  I'll defer this decision until I flesh
+out the implementation, see how big it is, and build some more model
+applications based upon it.
+
+Removed the calculator ("calc" command) from Mechanism into a separate
+Calculator script which monitors its own local chat channel.  This
+reduced the memory usage of the Mechanism script from 88% to 78% and
+will permit adding thousands of zowie new features to the calculator
+without risking memory crises in the main script.  (And, besides, the
+calculator will be useful to drop into other objects under development,
+completely unrelated to the present project.)  It has its own Status
+command, which reports memory usage at 36%.
+
+Rewrote and generalised argument parsing for the Calculator and added
+support for the following operations:
+    {x1, y1, z1} * {x2, y2, z2}     Compose rotation
+    {x1, y2, z1} / {x2, y2, z2}     Compose inverse rotation
+    <x1, y1, z1> * {x2, y2, z2}     Rotate vector by rotation
+    <x1, y1, z1> / {x2, y2, z2}     Rotate vector by inverse rotation
+    <x1, y1, z1> * <x2, y2, z2>     Dot product of vectors
+    <x1, y1, z1> % <x2, y2, z2>     Cross product of vectors
+    <x1, y1, z1> + <x2, y2, z2>     Component-wise sum of vectors
+    <x1, y1, z1> - <x2, y2, z2>     Component-wise difference of vectors
+    <x1, y1, z1> * f                Scale vector multiply
+    <x1, y1, z1> / f                Scale vector divide
+    f * <x1, y1, z1>                Scale vector multiply
+    f1 * f2                         Product of numbers
+    f1 / f2                         Quotient of numbers
+    f1 + f2                         Sum of numbers
+    f1 - f2                         Difference of numbers
+    i1 % i2                         Modulus of i1 by i2 (fractions truncated)
+
+2020 August 26
+
+Added code to expand the following symbolic constants in the
+Calculator:
+    DEG_TO_RAD
+    PI_BY_TWO
+    TWO_PI
+    PI
+    RAD_TO_DEG
+    SQRT2
+Constants are case-insensitive but may not be abbreviated.  Constants
+may be used within vector and rotation arguments.
+
+Added support for the following functions in the Calculator:
+    sin ang
+    cos ang
+    tan ang
+    asin f
+    acos f
+    atan2 fy fx
+    norm <vec>
+    mag <vec>
+    dist <vec> <vec>
+    anglebetween <rot> <rot>
+Functions which take as arguments or return angles respect Set angles
+and use degrees or radians accordingly.  Function names are
+case-insensitive but may not be abbreviated.
+
+Installed the Script Processor script in the test object.  This will
+permit testing configuration via script commands.
+
+Implemented the "Set restore" command and replaced the hard-coded panic
+restore in Mechanism with a Mechanism Configuration notecard which is
+automatically read at state_entry.  Revised the "Panic save" command to
+write its output as a series of "Set restore" commands which can be
+copied into a Mechanism Configuration notecard.  For the moment, I left
+the panic configuration for the test configuration in the script,
+commented out, just in case.
+
+Implemented the "Set parent" command to replace the hard-coded
+dependencyList.  We check and terminate the configuration script if the
+user declares a component dependent on two or more other components (or
+even doubly declares a component dependent on the same one twice).
+
+Added a checkDependencies() function to Mechanism to validate the
+dependency graph and ensure there are no circular dependency
+relationships.  This is presently called after every "Set parent"
+command to catch errors as early as possible.  We might optimise this a
+tad by deferring the check until after all configuration commands in
+the Mechanism Configuration script have been processed.
+
+2020 August 27
+
+To expedite the application of updates to multiple links when a change
+to a parent results in a cascade of changes to dependent links, I added
+an update deferral mechanism which is enabled by the global
+configuration flag deferUpdate.  When TRUE, the function
+deferUpdates(), called in flSetCompRot() and flSetCompPos(), sets
+deferMode, which causes adjustComponent to place updates to link
+position and rotation on deferList[] rather than executing them
+immediately.  Each is prefixed with the link number to which it
+applies, using PRIM_LINK_TARGET to select the link.  When all of the
+updates have been enqueued, calling deferUpdates(0) causes them to be
+applied in a single call on llSetLinkPrimitiveParamsFast(), avoiding
+multiple API calls and allowing the simulator to optimise sending
+updates to the viewer (I have no idea if it actually does so, but it's
+nice to allow it the option if and when it does).  This mode is
+currently always enabled, but can be disabled for debugging, when it
+makes what's going on in complex updates more transparent.  I may add a
+Set variable to control it.
+
+When dealing with multiple objects, especially individual parts of a
+complex mechanism, moving independently due to omega rotations, a
+further, potentially important optimisation suggests itself: extending
+the deferral of updates across multiple changes to components.  The
+idea is that we'd accumulate all of the changes resulting from a single
+omega update timer tick in deferList[], then scan the list (which is
+ordered by the sequence in which the change occurred) and delete all
+but the last change to a specific link.  This optimisation is simple to
+implement (since the sequence for an update in deferList[] is always
+fixed length and the same in structure), but the fly in the ointment is
+that when multiple updates occur during such a multiple-operation
+deferral, subsequent updates may depend upon orientations which have
+changed to to prior, un-committed updates.  To make this work, we'd
+need a cache which remembers un-committed link updates and overrides
+the values returned by flGetComp...() with them.  This also assumes the
+code performing the updates in a multiple command scenario only uses
+those functions and never the low-level API calls.  I may proceed to
+this complexity, but there are higher priorities at the moment, such as
+actually making omega rotation work correctly in the general case.
+
+Another potential optimisation, although I don't know how much
+difference it might make, would be to grab all positions and
+orientation of components in a single call on llGetLinkPrimitiveParams
+using PRIM_LINK_TARGET, then retrieve them locally without individual
+API calls.  This, combined with local updates, would play nicely with
+the multiple command update deferral discussed in the previous
+paragraph.
+
+2020 August 28
+
+Completed the first cut of separating the Mechanisms code into a server
+script with a lightweight client API the user includes in their
+device-specific script.  It basically works, but there's need for
+plenty of review to see which should be on what side of the
+client/server divide, as well as possibilities to simplify the server
+code (which, for example, still uses the full heavyweight Script
+Processor just to read its single configuration script).
+
+The client-specific code for the example is now in a script called
+Gimbals.  All of the server-oriented command processing has been
+removed and only client commands remain.  With plenty of memory to
+spare now, I re-enabled the ef() family formatting of numbers.
+
+In order to provide a synchronous flGetCompOmega() result, the client
+now maintains a copy of active omega rotations on the client side.
+This is ugly, but it gets you there, and the client doesn't need to see
+any of the timing information which is known only to the server.
+
+2020 August 29
+
+Added a number of extensions to the Calculator.
+
+The Status command now lists the name of the prim in which the script
+is installed, its link number, and the number of prims.  It then shows
+a table of prims in the link set with the script's prim identified by
+an asterisk, with the local (region for root prim) position and
+rotation of each component.
+
+You can now enter a single value of type float, vector, or rotation in
+the Calc command to see its interpreted value.  For rotations, the
+value is shown in both Euler angle and quaternion representations.
+
+Arguments to the Calc command may now include:
+    pos(n)      Local position of link n
+    rot(n)      Local rotation of link n
+    gpos(n)     Global (region) position of link n
+    grot(n)     Global (region) rotation of link n
+
+The last result of a Calc command (except for a single value argument
+query) is saved in a list, lastres, and may be substituted into a
+subsequent command with "$".  The type and value are saved.
+
+Added Calculator commands to set the local position and rotation of
+components with in the link set containing the script:
+    Set pos linkno <position>
+    Set rot linkno {rotation}
+The position and rotation arguments may be any syntax accepted by the
+Calc command, including "$".
+
+The Set pos and Set rot commands save the previous position and
+orientation in an undoList.  You can undo previous commands with:
+    Undo
+A maximum of 10 previous positions and orientations are saved.
+
+Added the angle unit to the Calculator Status output.
+
+Replaced the general Script Processor module with stripped down special
+purpose code within Mechanism.  This saves space and makes the script
+stand-alone, with no need to install the separate Script Processor
+script.
+
+Eliminated unused code and variables in Mechanism which were orphaned
+by the removal of the general Script Processor.  This, along with
+disabling code conditional on TRACE, reduced the script's memory usage
+to below 80%, which is comfortable given its modest requirements for
+dynamic memory.
+
+Added a Help command to Gimbals which gives the requester the
+Mechanisms User Guide notecard.
+
+Added a Help command to Calculator which gives the requester the
+Calculator User Guide notecard.
+
+2020 August 30
+
+Added some sneaky hand-optimisation to the ef() function to reduce the
+number of API calls it makes and garbage collections it provokes. This
+resulted in a speed-up of around 33% in typical use of this function,
+which was embarrassingly slow when doing things such as formatting
+status displays of component position and rotation.  There is
+essentially zero cost in script memory from doing this.
+
+2020 August 31
+
+Built a model of a door on a turntable for further testing and ran into
+a problem where rotating the primary hinge of the door, which is the
+parent of the other hinges and the swinging panel, causes the hinges
+and panel to rotate around the centre of the hinge's parent, the top of
+the door frame.  If I remove the parent of the hinge, everything works
+tickety-boo.
+
+Here is a trace of RZ 30 with the hinge having no parent:
+
+    >> rz 30
+    Link 6 current rot <0, 0, 0>
+      New rot <0, 0, 30>
+    flSetCompRot(linkno=6, newrot=<0, 0, 30>):
+      Confirming new rot <0, 0, 0>
+      Parent link -1, position <0, -0.40564, 1.95068>, rotation <0, 0, 0>
+      Current component location in parent co-ords, pos <0, -0.40564, 1.95068>, rot <0, 0, 0>
+      Delta rotation in parent co-ords <0, 0, 30>
+      Transform current rotation back to new by deltarot<0, 0, 30> == <0, 0, 30>
+    adjustComponent(linkno=-6, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.40564, 1.95068>, parrot=<0, 0, 0>)
+      Toplevel is link 6
+      adjustComponent: Current LCS pos <0, -0.40564, 1.95068> rot <0, 0, 0>
+      adjustComponent: Current parent co-ords pos <0, 0, 0> rot <0, 0, 0>
+      adjustComponent: Component adjusted in parent co-ords pos <0, 0, 0> rot <0, 0, 30>
+      adjustComponent: Link 6 new pos <0, -0.40564, 1.95068> rot <0, 0, 30>
+    adjustComponent(linkno=4, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.40564, 1.95068>, parrot=<0, 0, 0>)
+      adjustComponent: Current LCS pos <0, -0.40564, 0.6615> rot <0, 0, 0>
+      adjustComponent: Current parent co-ords pos <0, 0, -1.28918> rot <0, 0, 0>
+      adjustComponent: Component adjusted in parent co-ords pos <0, 0, -1.28918> rot <0, 0, 30>
+      adjustComponent: Link 4 new pos <0, -0.40564, 0.6615> rot <0, 0, 30>
+    adjustComponent(linkno=5, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.40564, 1.95068>, parrot=<0, 0, 0>)
+      adjustComponent: Current LCS pos <0, -0.40564, 1.34876> rot <0, 0, 0>
+      adjustComponent: Current parent co-ords pos <0, 0, -0.60192> rot <0, 0, 0>
+      adjustComponent: Component adjusted in parent co-ords pos <0, 0, -0.60192> rot <0, 0, 30>
+      adjustComponent: Link 5 new pos <0, -0.40564, 1.34876> rot <0, 0, 30>
+    adjustComponent(linkno=7, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.40564, 1.95068>, parrot=<0, 0, 0>)
+      adjustComponent: Current LCS pos <0, 0, 1.23633> rot <0, 0, 0>
+      adjustComponent: Current parent co-ords pos <0, 0.40564, -0.71435> rot <0, 0, 0>
+      adjustComponent: Component adjusted in parent co-ords pos <-0.20282, 0.35129, -0.71435> rot <0, 0, 30>
+      adjustComponent: Link 7 new pos <-0.20282, -0.05435, 1.23633> rot <0, 0, 30>
+
+And here is a trace with the hinge having Door 1 (link 9) as its
+parent.
+
+>> rz 30
+Link 6 current rot <0, 0, 0>
+  New rot <0, 0, 30>
+flSetCompRot(linkno=6, newrot=<0, 0, 30>):
+  Confirming new rot <0, 0, 0>
+  Parent link 9, position <0, -0.00433, 2.36011>, rotation <0, 0, 0>
+  Current component location in parent co-ords, pos <0, -0.40131, -0.40943>, rot <0, 0, 0>
+  Delta rotation in parent co-ords <0, 0, 30>
+  Transform current rotation back to new by deltarot<0, 0, 30> == <0, 0, 30>
+adjustComponent(linkno=-6, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.00433, 2.36011>, parrot=<0, 0, 0>)
+  Toplevel is link 6
+  adjustComponent: Current LCS pos <0, -0.40564, 1.95068> rot <0, 0, 0>
+  adjustComponent: Current parent co-ords pos <0, -0.40131, -0.40943> rot <0, 0, 0>
+  adjustComponent: Component adjusted in parent co-ords pos <0.20066, -0.34754, -0.40943> rot <0, 0, 30>
+  adjustComponent: Link 6 new pos <0.20066, -0.35187, 1.95068> rot <0, 0, 30>
+adjustComponent(linkno=4, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.00433, 2.36011>, parrot=<0, 0, 0>)
+  adjustComponent: Current LCS pos <0, -0.40564, 0.6615> rot <0, 0, 0>
+  adjustComponent: Current parent co-ords pos <0, -0.40131, -1.69861> rot <0, 0, 0>
+  adjustComponent: Component adjusted in parent co-ords pos <0.20066, -0.34754, -1.69861> rot <0, 0, 30>
+  adjustComponent: Link 4 new pos <0.20066, -0.35187, 0.6615> rot <0, 0, 30>
+adjustComponent(linkno=5, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.00433, 2.36011>, parrot=<0, 0, 0>)
+  adjustComponent: Current LCS pos <0, -0.40564, 1.34876> rot <0, 0, 0>
+  adjustComponent: Current parent co-ords pos <0, -0.40131, -1.01135> rot <0, 0, 0>
+  adjustComponent: Component adjusted in parent co-ords pos <0.20066, -0.34754, -1.01135> rot <0, 0, 30>
+  adjustComponent: Link 5 new pos <0.20066, -0.35187, 1.34876> rot <0, 0, 30>
+adjustComponent(linkno=7, trans=<0, 0, 0>, turot=<0, 0, 30>, parpos=<0, -0.00433, 2.36011>, parrot=<0, 0, 0>)
+  adjustComponent: Current LCS pos <0, 0, 1.23633> rot <0, 0, 0>
+  adjustComponent: Current parent co-ords pos <0, 0.00433, -1.12378> rot <0, 0, 0>
+  adjustComponent: Component adjusted in parent co-ords pos <-0.00217, 0.00375, -1.12378> rot <0, 0, 30>
+  adjustComponent: Link 7 new pos <-0.00217, -0.00058, 1.23633> rot <0, 0, 30>
+
+2020 September 1
+
+Extended the Door model by adding a door handle composed of three prims:
+    2. Door handle shaft  (10: Panel)  <0, 0.33701, 1.27063> <0, 90, 0> Par <0, 90, 0> Ch 3, 4
+    3. Door handle inside  (2: Door handle shaft)  <0.05677, 0.27631, 1.27063> <90, 0, 90> Par <90, 0, 180>
+    4. Door handle outside  (2: Door handle shaft)  <-0.05755, 0.27708, 1.27063> <90, 0, 90> Par <90, 0, 180>
+I added a convenience command, "RH", to rotate the handle.  This
+revealed additional problems in rotation of objects with parents in
+non-zero rotations.
+
+Added logic to pass settings from a client program to the Mechanisms
+script.  A new call, flMechSettings(), passes the settings, the only
+one of which at present is trace.
+
+2020 September 2
+
+To avoid ongoing confusion and facilitate cut and paste, I added the
+chat command channel to the command echo in Calculator and the Door
+assembly script.  The channel is not shown when echoing commands from
+scripts.
+
+Added a general command to rotate a component specified by number
+around an arbitrary axis and angle:
+    RL linkno <axis> angle
+This allows experimentation with arbitrary components without having to
+add special rotate commands for each.
+
+[06:50] Door Assembly:   1. Door Assembly  <103, 141, 1200.437> <0, 0, 0>
+[06:50] Door Assembly:   2. Door handle shaft  (10: Panel)  <0, 0.33701, 1.27063> <0, 90, 0> Par <0, 90, 0> Ch 3, 4
+[06:50] Door Assembly:   3. Door handle inside  (2: Door handle shaft)  <0.05677, 0.27631, 1.27063> <90, 0, 90> Par <90, 0, 180>
+[06:50] Door Assembly:   4. Door handle outside  (2: Door handle shaft)  <-0.05755, 0.27708, 1.27063> <90, 0, 90> Par <90, 0, 180>
+[06:50] Door Assembly:   5. Turntable  <0, 0, 0.14685> <0, 0, 0> Ch 2, 3, 4, 6, 7, 8, 9, 10, 11, 12
+[06:50] Door Assembly:   6. Frame L  (12: Door 1)  <0, -0.50998, 1.23633> <0, 0, 0> Par <0, 0, 0>
+[06:50] Door Assembly:   7. Hinge bottom  (9: Hinge top)  <0, -0.39698, 0.6615> <0, 0, 0> Par <0, 0, 0>
+[06:50] Door Assembly:   8. Hinge middle  (9: Hinge top)  <0, -0.39698, 1.34876> <0, 0, 0> Par <0, 0, 0>
+[06:50] Door Assembly:   9. Hinge top  (12: Door 1)  <0, -0.39698, 1.95068> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4, 7, 8, 10
+[06:50] Door Assembly:   10. Panel  (9: Hinge top)  <0, 0.00866, 1.23633> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4
+[06:50] Door Assembly:   11. Frame R  (12: Door 1)  <0, 0.49901, 1.23633> <0, 0, 0> Par <0, 0, 0>
+[06:50] Door Assembly:   12. Door 1  (5: Turntable)  <0, -0.00433, 2.36011> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4, 6, 7, 8, 9, 10, 11
+
+
+Here is a trace of RH 30, rotating the door handle by 30 degrees:
+    >> /11 rh 30
+    Link 2 current rot <0, 90, 0>
+        New rot <0, 90, 30>
+    flSetCompRot(linkno=2, newrot=<0, 90, 30.00004>):
+      Parent link 10, rotation <0, 0, 0>
+      Confirming new rot <0, 90, 0>
+      New rotation in LCS (newrotLCS) <0, 90, 30.00004>
+      Delta rotation in LCS <0, 0, 30.00007>
+      Transform current rotation back to new by deltarot<0, 90, 30.00003> == <0, 90, 30.00004>
+    adjustComponent(linkno=3, trans=<0, 0, 0>, rot=<0, 0, 30.00007>, pivpos=<0, 0.33701, 1.27063>, pivrot=<0, 90, 0>)
+      adjustComponent: Current link 3 LCS pos <0.05677, 0.27631, 1.27063> rot <90, 0, 90>
+      adjustComponent: component vector original <0.05677, -0.0607, 0>
+        component vector rotated <0.07951, -0.02418, 0>
+        difference original - rotated <-0.02274, -0.03652, 0>
+        difference vector rotated <0.03652, 0, -0.02274>
+        new component position <0.07951, 0.31283, 1.27063>
+        new component rotation <89.99997, 0.00005, 120.0001>
+    adjustComponent(linkno=4, trans=<0, 0, 0>, rot=<0, 0, 30.00007>, pivpos=<0, 0.33701, 1.27063>, pivrot=<0, 90, 0>)
+      adjustComponent: Current link 4 LCS pos <-0.05755, 0.27708, 1.27063> rot <90, 0, 90>
+      adjustComponent: component vector original <-0.05755, -0.05993, 0>
+        component vector rotated <-0.01987, -0.08068, 0>
+        difference original - rotated <-0.03768, 0.02075, 0>
+        difference vector rotated <-0.02075, 0, -0.03768>
+        new component position <-0.01987, 0.25633, 1.27063>
+        new component rotation <89.99997, 0.00005, 120.0001>
+The rotation of the parent component (2; Door handle shaft) is correct.
+
+      1. Door Assembly  <103, 141, 1200.437> <0, 0, 0>
+      2. Door handle shaft  (10: Panel)  <0, 0.33701, 1.27063> <0, 90, 0> Par <0, 90, 0> Ch 3, 4
+      3. Door handle inside  (2: Door handle shaft)  <0.05677, 0.27631, 1.27063> <90, 0, 90> Par <90, 0, 180>
+      4. Door handle outside  (2: Door handle shaft)  <-0.05755, 0.27708, 1.27063> <90, 0, 90> Par <90, 0, 180>
+      5. Turntable  <0, 0, 0.14685> <0, 0, 0> Ch 2, 3, 4, 6, 7, 8, 9, 10, 11, 12
+      6. Frame L  (12: Door 1)  <0, -0.50998, 1.23633> <0, 0, 0> Par <0, 0, 0>
+      7. Hinge bottom  (9: Hinge top)  <0, -0.39698, 0.6615> <0, 0, 0> Par <0, 0, 0>
+      8. Hinge middle  (9: Hinge top)  <0, -0.39698, 1.34876> <0, 0, 0> Par <0, 0, 0>
+      9. Hinge top  (12: Door 1)  <0, -0.39698, 1.95068> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4, 7, 8, 10
+      10. Panel  (9: Hinge top)  <0, 0.00866, 1.23633> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4
+      11. Frame R  (12: Door 1)  <0, 0.49901, 1.23633> <0, 0, 0> Par <0, 0, 0>
+      12. Door 1  (5: Turntable)  <0, -0.00433, 2.36011> <0, 0, 0> Par <0, 0, 0> Ch 2, 3, 4, 6, 7, 8, 9, 10, 11
+    Dependency list: -1, 10, 2, 2, -1, 12, 9, 9, 12, 9, 12, 5
+
+Original rot link 3:
+    /12 set rot 3 {90,0,90}
+Correct rot link 3:
+    /12 set rot 3 {60,0,90}
+Correct delta:
+    >> /12 ca {60,0,90} / {90,0,90}
+    {60, 0.00001, 90.00001} / {90, 0, 90} = {0, 30, 0}
+Correct transformation:
+    >> /12 ca {0,30,0} * {90,0,90}
+    {0, 30, 0} * {90, 0, 90} = {60, -0.00001, 90}
+
+Transformation from Handle CCS to LCS when Panel CCS == {0,0,0}
+    Handle shaft rotation in parent (Panel) {0,90,0}
+    Desired handle rotation in parent CS {30, 0, 0}
+        >> /12 ca {0,90,0} * {30,0,0}
+        {0, 90, 0} * {30, 0, 0} = {0, 90, 30}
+        >> /12 set rot 2 {0,90,30}
+    Handle inside rotation in parent CS {90, 0, 90}
+        >> /12 ca {90,0,90} * {30,0,0}
+        {90, 0, 90} * {30, 0, 0} = {120, -0.00001, 90}
+        >> /12 set rot 3 {120,0,90}
+
+Transformation with the panel rotated:
+    Handle shaft rotation in parent (Panel) {0,90,0}
+    Desired handle rotation in parent CS {30, 0, 0}
+        >> /11 rp -45
+        >> /12 ca rot(10)
+        {0, 0, -45}  <0, 0, -0.38268, 0.92388>
+    Transform handle rotation into parent:
+        >> /12 ca {0,90,0} * {30,0,0}
+        {0, 90, 0} * {30, 0, 0} = {0, 90, 30}
+    Transform handle rotation from parent to LCS:
+        >> /12 ca {0, 90, 30} * {0,0,-45}
+        {0, 90, 30} * {0, 0, -45} = {90.00002, 45, -60.00001}
+        >> /12 set rot 2 {90,45,-60}
+
+Now move on to the handles, whose parent is the shaft.
+    Compute delta rotation of handle in the handle's CCS.
+        >> /12 ca {0,90,30} / {0,90,0}
+        {0, 90, 30} / {0, 90, 0} = {0, 0, 30}
+
+After rotating handle shaft, delta rotation is {0,0,45}.
+To transform handles inside/outside.  Transform this
+delta by the rotation of the handle in its parent
+(shaft) co-ords:
+        >> /12 ca {90,0,180} * {0,0,45}
+        {90, 0, 180} * {0, 0, 45} = {90, 45, -180}
+Now transform this by the original (pre-rotation)
+transform of the parent (shaft) to LCS:
+        >> /12 ca {90, 45, -180} * {0,90,0}
+        {90, 45, -180} * {0, 90, 0} = {135, 0, 90.00001}
+and this is our rotation of the handle.
+        >> /12 set rot 3 {135, 0, 90.00001}
+
+2020 September 3
+
+Added some additional error checking to parseCalcArg in Calculator to
+catch common cases such as omitting spaces between arguments,
+mismatched brackets on vectors and rotations, and missing components in
+vectors and rotations due to, for example, mistyping a comma as a
+decimal point.
+
+Integrated the new, optimised version of ef() (floating point
+formatter) from Mechanism to Calculator.  It is a compatible, drop-in
+replacement, so this was a simple copy and paste.
+
+After further struggles, everything I've tested seems to be working now
+with both the gimbals and door model.  There is a lot of clean up
+remaining, and the possibility of folding the update of the initial
+component into adjustComponents() by crafty setting of initial
+conditions.
+
+Integrated the new versions of Mechanisms and Calculator into the
+Gimbals model, which I renamed "Gimbals" rather than the too-generic
+"Mechanism", adjusting its configuration accordingly.  Integrated the
+corresponding API code into its main Gimbals script.  Updated the
+version of ef() in the main script to the current one.
+
+Added a means to constrain the rotation performed by flSetCompOmega().
+A new final limit argument specifies the amount of rotation in radians.
+If zero or negative, the component rotates forever until cancelled, as
+before.  If a limit is set, when reached the component stops rotating
+and a LM_ME_OMEGALIMIT (129) message is sent to scripts in the link
+with its string argument specifying the number of the link whose
+rotation just completed, allowing the script to distinguish completions
+of specific links if multiple are rotating simultaneously.
+
+Added a sequenced door open and close demonstration to the Door model.
+Touching the model moves the handle, plays a latch opening sound, then
+opens the door with a creaking sound effect.  When that rotation
+completes, the door goes idle until touched again, whereupon it pivots
+closed with the creak again, and when that rotation completes, plays a
+latching sound and returns to the initial state.
+
+2020 September 5
+
+Completed implementation of the Blobby Man deployer, then instantiated
+a Blobby Man and wrote a Mechanism Configuration for it.  The first cut
+is a straightforward translation of the original transformation
+hierarchy.  In order to work with Mechanisms, we need to add invisible
+articulation points at movable joints which are the parents of the
+moving components.  This will cause them to pivot correctly around
+their articulations.
+
+2020 September 6
+
+Here are the joints of the standard Second Life avatar, named as in the
+standard BVH files:
+
+    hip     Xposition Yposition Zposition Xrotation Zrotation Yrotation
+        abdomen     Xrotation Zrotation Yrotation
+            chest       Xrotation Yrotation Zrotation
+                neckDummy       Xrotation Yrotation Zrotation
+                    neck        Xrotation Yrotation Zrotation
+                        head        Xrotation Yrotation Zrotation
+                            figureHair      Xrotation Yrotation Zrotation
+            lCollar     Xrotation Yrotation Zrotation
+                lShldr      Xrotation Yrotation Zrotation
+                    lForeArm    Xrotation Yrotation Zrotation
+                        lHand       Xrotation Yrotation Zrotation
+            rCollar     Xrotation Yrotation Zrotation
+                rShldr      Xrotation Yrotation Zrotation
+                    rForeArm    Xrotation Yrotation Zrotation
+                        rHand       Xrotation Yrotation Zrotation
+        lThigh      Xrotation Zrotation Yrotation
+            lShin       Xrotation Zrotation Yrotation
+                lFoot       Xrotation Zrotation Yrotation
+        rThigh      Xrotation Zrotation Yrotation
+            rShin       Xrotation Zrotation Yrotation
+                rFoot       Xrotation Zrotation Yrotation
+
+2020 September 11
+
+Frame 12 (BVH nomenclature, frame 11 in ours):
+                                           Channel co-ords                         BVHacker
+[12:34] Blobby Man: Rigged:   rCollar  <-1.54971, 8.51104, 4.79411>         4.79    -1.55   8.51  YZX
+[12:34] Blobby Man: Rigged:   rShldr  <-27.99480, 17.01140, -68.61810>    -68.62    17.01 -27.99  ZYX
+[12:34] Blobby Man: Rigged:   rForeArm  <127.80000, 7.82737, -56.43680>   -56.44   127.80   7.83  YZX
+[12:34] Blobby Man: Rigged:   rHand  <-3.61034, -1.67963, -10.67756>      -10.68    -1.68  -3.61  ZYX
+
+Our channel signatures from jChans() agree with those reported by BVHacker.
+
+BVHacker reports joint rotations in X, Y, Z order regardless of their
+order in channels.
+
+Our query (st ex) reports:
+    14. Joint: rForeArm  (24: Right Upper arm)
+        <-0.33058, -0.26245, 1.64837> <-83.34351, -32.14105, -115.62500>
+    Par <0.00000, 0.00000, -0.14929> <-56.43688, -7.82735, 127.80000> Ch 13, 22, 23
+and hence, we see the angles relative to the parent as <-56.43688,
+-7.82735, 127.80000> or, in other words, Y and Z reversed, with the
+wrong sign on Y.
+
+I can establish the correct angles on rForeArm(14) with:
+    rl 14 <0,0,0> 0         # clear existing rotation
+    rl 14 <0,0,1> 7.83      # Z
+    rl 14 <1,0,0> -56.44    # X
+    rl 14 <0,1,0> 127.8     # Y
+This now reports:
+    Par: <130.38470, 58.47027, 171.71960>
+but this may be Euler weirdness.
+
+Right shoulder rShldr(15) reports in parent <-77.45813, 26.67022, 19.11078>.
+
+2020 September 12
+
+Added support for the LM_AB_STAT message to Animation BVH and code to
+the Status command in Blobby man to request its status via that
+message, removing the need to query via its dedicated chat channel,
+which we may eventually eliminate, making the BVH module entirely
+"headless".
+
+Split the main Mechanism script into two components: Mechanism and
+Mechanism Auxiliary.  Mechanism contains the main logic with which the
+client interacts to manipulate the hierarchical mechanism: setting
+position and rotation of components and propagating changes to child
+components of those modified.  The client API code invokes it via link
+messages to perform these functions.  To deal with the potential
+problem of a client examining the structure while the Mechanisms script
+is in the process of modifying it, the link interfaces to Mechanisms:
+LM_ME_TRANSLATE and LM_ME_ROTATE, now respond with a link message,
+LM_ME_COMPLETE, when all updates are done.  The string parameter in
+this message contains the link code of the command which just
+completed.
+
+A new Mechanism Auxiliary script handles the following functions:
+    Loading and parsing the Mechanism Configuration notecard
+        and sending its contents to the main Mechanism script
+        and clients via the LM_ME_CONFIG message.
+    Status command output generation.
+    Panic restore and generation of restore settings.
+    Omega rotation: setting, updating by timer, generating
+        messages to main script for updating mechanism, and
+        informing when limited rotation complete.
+
+Here, for reference, is the script memory status after this change,
+with the Blobby Man model loaded, the Bow animation loaded, and one
+frame in memory.
+    Blobby Man              86%
+    Mechanism               45%
+    Mechanism Auxiliary     76%
+    Animation BVH           66%
+    Calculator              68%
+    Animation Compiler      31%
+
+Added the ability to monitor and display link messages with the Calculator.
+The commands are:
+    Set link from to            Set range of num parameters to monitor
+    Set link from               Monitor a single num parameter
+    Set link off                Disable link message monitoring
+    Set link                    Show parameter range being monitored
+
+2020 September 13
+
+Well, the March of Shoddy continues.  I installed the new version of
+jAngles() in Blobby Man, which returns a vector containing the angles
+(in degrees, as specified in the BVH file) of rotations for a joint
+with the X, Y, and Z components specifying the logical rotations
+regardless of the order in which the components were specified in the
+BVH.  The function is passed the channel components list as parsed by
+jChans.  This is intended to reduce confusion in sorting out channel
+order, the rotation axes they represent, the order they apply, and the
+different world axes into which they are mapped in Second Life which,
+all taken together, can make your head spin.
+
+One advantage of the new jAngles is that the angles it reports can be
+compared directly to those shown by BVHacker as a reality check.  As
+usual, reality is somewhat fuzzy.  Everything agrees except for the hip
+joint, which is the root of the tree.  We see the following:
+    BVHacker    XZY         <-0.35,    0.37,     2.61   >
+    Blobby Man  XZY         < 2.61426, 0.36985, -0.34997>
+Thus, even though both report the same rotation order in the BVH file,
+BVHacker has the X and Y rotations interchanged.  Those reported by
+Blobby Man agree with interpreting the channels from the BVH in the
+order of the CHANNELS declaration for the joint, so at this point my
+working assumption is that BVHacker is just wrong.  Since the rotations
+for this joint are small, an error is unlikely to be noticed when
+visually examining the rendered skeleton.
+
+2020 September 14
+
+Added the ability to invoke the calculator in "headless" mode from
+other scripts.  Commands may be submitted via a link message to
+LM_CA_COMMAND with the string argument a command precisely as would be
+submitted via chat.  The result of the most recent calculation is
+reported via a LM_CA_RESULT message with the string argument a JSON
+encoded list in the format stored in the "lastres" list: a type ("f",
+"v", or "r" for float, vector, or rotation) followed by the value.  The
+result is reported regardless of whether the command is submitted via
+chat or link message.
+
+To simplify the task of client scripts invoking the calculator, I added
+logic to ignore an extra "Calc" before valid calculator commands. This
+means that client scripts can direct any command to the calculator
+prefixed by "Calc" without worrying whether it is an actual calculator
+expression or another command such as "Status" or "Set".
+
+The calculator failed to set lastres or report the result via
+LM_CA_RESULT when passed a single value as a query, for example:
+    Calc rot(5)
+Fixed.
+
+Added support for the calculator via a Calc command in Blobby Man and
+"$" to include its last result in commands.
+
+After feeling need one time too many, I added a command to the
+Calculator:
+    set connector connlink fromlink tolink
+to position a connector prim in a link set, connlink, which must have
+been previously created and linked into the set, to connect components
+fromlink and tolink.  The connector is moved and rotated to connect the
+positions of the two prims, and its Z size is adjusted to the distance
+between them which, for a connector such as cylinder or box, will form
+a connector.  It's up to you to set the other dimensions, texture, and
+properties of the connector and make sure it's added to the link set.
+You can undo the position and rotation changes made by this command,
+but it'll take two Undo commands to reverse them both.  The change in
+size cannot be undone, but will be reset by a subsequent Set connector
+command.  Note that this uses the flaky built-in llRotBetween() and may
+produce whacko results in extreme cases which run into its
+singularities: if this proves a problem, it can be replaced with the
+proper re-implementation we use elsewhere.
+
+Ratio of joint offsets:
+                        SL AVATAR
+                X           Y           Z           Abs Y
+    Hip         0           0           0             0
+    Abdomen     0           0           0             0
+    Chest       0        5.018152   -1.882228      5.018152
+    neckDummy   0        8.316447    0.784897     13.3346
+    Neck        0        2.280413   -0.392801     15.61501
+    r/lCollar +-0.59923  8.316447    0.784897     13.3346
+    r/lShldr  6.421198   0.01014    -0.332128
+Chest is 0.321367 of Hip/Neck distance.
+Collar Y is 0.853960 of Hip/Neck
+Collar X is 0.0933296 Shoulder
+
+                        BLOBBY MAN
+                X           Y           Z           Abs Z
+    Hip         0           0        1.02929
+    Abdomen     0           0        1.09619
+    Neck        0        2.280413    1.60046       0.57117
+    xShldr    0.2475
+Corresponding Chest offset Z is 0.183555, so local Z is 1.212845.
+Corresponding Collar offset Z is 0.487756.
+Corresponding Collar offset X is 0.0230991
+
+2020 September 15
+
+To allow client scripts to avoid race conditions due to the concurrent
+updating of components in the Mechanism script, I implemented a
+"handle" facility for position and rotation updates to the mechanism.
+The client functions flSetCompPos() and flSetCompRot() now return a
+"handle" result (an opaque integer which uniquely identifies the
+pending operation) and, when the updates to the mechanism are complete,
+send a LM_ME_COMPLETE whose string parameter is a CSV list specifying
+the operation time (LM_ME_TRANSLATE or LM_ME_ROTATE) and the handle of
+the just-completed operation.  This allows clients to be careful not
+to, for example, examine the position or rotation of components
+affected by a mechanism change until the operation completes.
+
+Added logic to Mechanism Auxiliary to use the new handles facility to
+serialise updates to omega rotation.  Checking for its handles, as
+opposed to other which may be simultaneously in progress, keeps it from
+from being confused by concurrent updates from other sources.
+
+Removed great snowdrifts of disabled experimental code in Blobby Man
+which was added while figuring out how BVH rotations and offsets work.
+
+2020 September 16
+
+Created a new model, working name Binky Man, by re-integrating the new
+skeleton with the body components from the original Blobby Man.
+Created new components for Left Clavicle and Right Clavicle to connect
+the xCollar and xShoulder joints.  Added the old Shoulder component to
+cover the clavicle bones in most cases.  This, and handling of the
+chest joint, will require more thought and experimentation.
+
+Added frame number as comments to the channel data output by fixbvh.pl.
+This makes it easier to interpret the raw channel information when the
+need arises.
+
+It looks like the position units in the Hip joint are cm off the ground
+on which are avatar is positioned.
+
+The flSetCompPos() function in Mechanism mis-handled the case where the
+component was the root of a hierarchy tree (and hence had no parent).
+It took the current rotation and position in parent co-ordinates to be
+those of the component where, in fact, they should have been
+ZERO_VECTOR and ZERO_ROTATION since the effective parent is the root
+prim of the link set, which has zero offset and rotation with respect
+to itself.
+
+I need to think about and test the case (not yet used in any mechanism)
+where the top level prim in the mechanism is also the root prim of the
+link set.  I'll bet this needs a tweak due to PRIM_x_LOCAL returning
+region co-ordinates in that case.
+
+2020 September 17
+
+Replaced the "Big Hack Attack" commands in Blobby Man with a more
+rational means of controlling BVH animations.  The commands are now:'
+
+    Animation load Animation name
+        Load BVH animation into memory.  If the name is omitted, a list
+        of animation notecards is displayed.
+
+    Animation play [ start [ end ] ]
+        Play frames start to end of loaded animation.  If omitted, end
+        defaults to start and if both are omitted the entire animation
+        is played.
+
+    Animation compile [ start [ end ] ]
+        Compile the animation into a compressed format which is output
+        in local chat (since there isn't anywhere else a script can
+        write information in such volume).
+
+    Animation joint name/*
+        Display configuration information for the named joint or all
+        joints as of the most recently played frame.
+
+Finished the first generation implementation of compiled animations.
+You start by running an Animation compile and saving the compiled
+output from local chat.  This is then processed by a Perl program,
+companim.pl, which extracts the information from chat (ignoring other
+messages which may intervene).  The output of companim.pl is a sequence
+of LSL code which is integrated into the Animation Player script for
+the animation.  You can typically fit around 15 frames per script, and
+use as many scripts for the animation as it takes.  The construction of
+headers for these script is still manual.
+
+2020 September 18
+
+Redesigned the compiled animation player so it manages playing
+successive frames of the animation within each segment all by itself,
+from its own timer events.  This eliminates all of the link message
+traffic, encoding and decoding of messages, and attendant possible
+delays.  An animation is started by sending an LM_AP_PLAY message
+naming the animation and the desired frame (0).  The first segment of
+the animation (that containing starting frame 0) will respond to this
+by starting the animation.  When it reaches the end of the frames in
+its segment, it sends another LM_AP_PLAY for the same animation name
+and the starting frame of the next segment.  This will trigger the
+script for the next segment, and so on.  When the last segment's script
+has played the last frame, it shuts down its timer and sends an
+LM_AP_COMPLETE message to the requester, informing it the animation is
+done playing.
+
+The compiled animation player code is now entirely generic and can be
+copied after the frame data for each segment without any changes.  Once
+the scripts have been downloaded into the viewer's cache, this results
+in very smooth animations.
+
+Added the ability to list compiled animations in the inventory with:
+    Animations run
+Scripts are sorted in alphabetic order and segment numbers are ignored.
+
+Added two segment blobs, "Thorax" and "Abdomen", to replace the
+previous monolithic "Body".  Because the Body was a child of the
+"Joint: chest", it did not articulate smoothly between the hips, chest,
+and shoulder joints.  These two segments do that, and avoid the
+embarrassing disconnection at the shoulders which occurred in extreme
+postures such as during the backflip.  As these are not articulated
+joints, they do not affect the structure of animations in any way.
+
+Added an "Animation repeat" command which loops a compiled animation.
+
+Added an "Animation stop" command which stops play, compilation, or
+running of a compiled animation, including repeat/looping.  A compiled
+animation is stopped immediately by sending it a LM_AP_STOP message.
+This message may be sent blind to stop any running animation(s), as in
+the Panic command.
+
+2020 September 19
+
+Implemented further compression of compiled animations by encoding
+positions as 48-bit values where each 16-bit component gives the offset
+in link-set relative space up to +/- 3.2767.  If any co-ordinate is
+outside that range, it is not compressed.  If all three co-ordinates
+are in range, the X is encoded in the top 16 bits of the op-code and
+the X and Z in a single integer replacing the position vector.
+
+Here's a history of successive optimisations of compiled animation
+script size.
+    Animation Size Estimates:
+        Baseline script:        3876            Net
+        One long string:       17256           13380
+        Static list:           15492           11616
+        Dynamic list init
+          in function:         10532            6656
+        Each additional list:                   6656
+        Collapse rules, links:  8996            5120
+        Compress rotations:     7460            3584
+        Compress positions:     6436            2560
+"Compress rotations" was compressing quaternion rotations to Euler
+angles, then encoding the angles as three 10 bit fields where values
+0-1023 represent 0 to TWO_PI.  This captures rotations with a precision
+of around 0.35 degree which is probably good enough for visibility,
+since our rotations are not cumulative from frame to frame.
+
+2020 September 20
+
+After another script memory crisis, split several commands, including
+the complex "Joint xxx" commands, out from Blobby Man into a new
+Command Processor script which is invoked when one of the commands it
+contains is received.  This provided sufficient breathing room in the
+new script to re-enable the ef() functions to better format its output.
+
+2020 September 21
+
+Completed the integration of the Script Processor module. enabling
+scripting of Blobby Man commands.  To avoid confusion with other uses
+of notecards, all script notecards have names beginning with "Script:
+", which is usually hidden from the user.  Script commands are:
+    script list
+    script run [ name ]
+The "Script run" command with no script name cancels all running
+scripts.  The script-internal commands implemented by the Script
+Processor are also available within scripts:
+    script loop [ n ]
+    script end
+    script pause [ n ]
+The "Panic" command will also stop any running scripts, and hence
+should not be used within scripts unless that is your intention.
+
+Implemented two demonstration scripts which set postures based upon
+those of the original Blobby Man:
+    Script: Attention
+    Script: Wave
+
+2020 September 22
+
+Added a translate command to Command Processor:
+    Joint translate <x,y,z>
+This can be undone.
+
+Completed the implementation of an automated translation facility,
+analogous to Omega rotation.  In the API, you start a rotation with:
+    flSetCompMotion(integer linkno, vector direction,
+        float speed, float distance)
+which starts a motion along the vector direction at a speed in metres
+per second, for the specified distance in metres.  When the motion is
+complete, a LM_ME_MOVELIMIT message is sent to the client.  Unlike
+flSetCompOmega, you must specify a nonzero distance for the motion:
+setting the distance to zero cancels any motion of that component.
+
+To query a motion:
+    list l = flGetCompMotion(integer linkno)
+which returns a list of [ direction, speed, distance ] of the
+in-progress motion.  Like flGetCompOmega(), this is done entirely on
+the client side, with its own copy of the motion list.
+
+Revised how "Joint undo" works for the "Joint move" and "Joint spin"
+commands.  Rather than trying to restore the previous move or spin
+state (which would usually act more like a Redo than an Undo), I made
+them halt any move or spin in progress and move the affected
+component(s) back to their position before the operation.  This is much
+more likely to be what the user expects and wishes.
+
+2020 September 23
+
+Completed initial implementation of the CMU DAZ motion capture BVH
+animations:
+    https://www.sites.google.com/a/cgspeed.com/cgspeed/motion-capture/daz-friendly-release
+to Second Life animation tool, developed in:
+    .../models/blobby_man/animations/binky/CMU/CMUtoSL.pl
+which is currently also the working directory for the conversion
+experiments.  Absent comprehensive documentation (the best I've found
+is):
+    http://wiki.secondlife.com/wiki/How_to_create_animations
+the only way to determine the generality of the Second Life BVH parser
+is by experiment.
+
+2020 September 24
+
+Why does the Jumping Jacks animation:
+    perl CMUtoSL.pl --start 2129 --end 2282 --fps 15 86_05.bvh
+lean backward?
+    jumping0        Straight conversion                         Lean
+    jumping1        Patched in OFFSETs from standard avatar     Lean
+    jumping2        Added keyframe from T-Pose                  No lean
+    jumping3        Both OFFSET and T-Pose                      No Lean
+OK, so adding the keyframe seems to fix the lean, but it introduces an
+initial jump from the start position to where the animation plays. So
+far, no effect from patching the OFFSETs can be discerned.  Let's
+create:
+    jumping4        T-pose added, patched with initial position
+This eliminates the initial jump in position.  So, it looks like
+synthesising a keyframe from the position of the first frame of the
+translated clip fixes the lean and the jump.  Tried patching in the
+first frame from the CMU file, but this produced an initial jump,
+though not as far as in jumping2.  So, it appears the synthetic
+keyframe is the way to go.  Out of abundance of caution, tested an
+all-zero rotation synthetic keyframe (as opposed to the one from
+T-pose, which actually has some small rotations of joints) and it
+worked just tickety-boo.
+
+Added generation of an automatic keyframe to CMUtoSL.pl, which can be
+suppressed with the --nokeyframe option.  This seems to work well with
+all of the test animations so far.
+
+Spent hours tracking down an error importing the Baseball Pitch as a
+Blobby Man animation.  The animation was partitioned into five
+segments, one of which consistently failed importing segment 3, with an
+out of memory in the script compiler (note, *not* in the script
+itself).  This, after much ratiocination, turned out to be due to the
+chat output which was imported into the animation compiler being
+corrupted due to the chat output falling behind and losing lines, which
+resulted in the animation compiler getting confused about the structure
+of frames.
+
+I fixed the immediate problem by adding a 3 second llSleep() between
+processing of frames by the compiler.  (Yes, I know delays are sinful
+and result in rubbery response, but I know of no way to get a
+confirmation that output has actually been received and displayed by
+chat, so I can't arrange a proper bounded buffer for this.)  This fixed
+the corruption of the chat transcript, but when I re-built and
+re-processed everything, segment 3 of the animation failed with the
+same error!  It turns out there was something persistent about the
+failure which deleting the entire source code of the script and
+replacing it didn't fix.  When I created a new script and added the
+corrected segment 3, it compiled correctly.  I then deleted the old
+segment 3, renamed the new one, and the animation worked correctly.  I
+haven't had this much fun since reading noisy cassette tapes into a
+Commodore 64.
+
+2020 September 25
+
+If a multi-segment animation was terminated by "Panic", the user would
+receive an "Animation complete" message for every segment which had
+played.  This was due to Animation Player failing to reset currentFrame
+to -1 upon receiving a frame number outside the range in its segment
+and thus believing it was still active.  Fixed.  Note that all
+animations should be recompiled with this fixed version prior to
+shipment.
+
+2020 September 26
+
+In the jRot() function in Blobby Man, handling of joint rotations from
+BVH files with a co-ordinate signature of "ZXY" was incorrect and
+performed the rotations in the wrong order.  This signature never
+occurs in the standard Second Life animations, and appears only a few
+times in the CMU motion capture BVHs for joints that don't rotate much,
+so its effect wasn't obvious.  Anyway, it's now fixed.
+
+At the same time, I added code to handle the "YXZ" signature, which
+we've never seen in a BVH file, but was the only signature we didn't
+handle. This will, I hope, avoid embarrassment if and when one comes
+along.  This code has, of course, never been executed, so it's possible
+I may have goofed adding it.
+
+2020 September 28
+
+The chain of tools used in exporting poses to BVH files was generating
+an incorrect vertical position for the root hip joint.  This was due to
+the vertical scale factor we introduced to handle CMU animations, which
+we default to 43.568405, which is what is used by CMU.  The files
+generated by our "Export pose" command have a unity scale factor for
+the vertical position.  This, when scaled by the default factor,
+resulted in the model sinking into the ground when the BVH was run
+through the chain of pose_to_bvh, bvh_to_bvm, and animation import.  I
+added a:
+    Vscale: 1
+statement to the MOTION section of the BVH files generated by
+pose_to_bvh.  This should be reviewed, since it may break compatibility
+importing those BVH files into other tools.  This fixed the immediate
+problem of the model sinking into the ground and allows us to move on
+to other things for the moment.
+
+2020 October 1
+
+Began the grand re-integration of the current generation Mechanism
+scripts from Blobby Man back into the original Gimbals model.  The
+first thing I discovered is that the version of the Mechanism script
+there was so ancient it contained errors in converting from parent to
+LCS co-ordinates which were fixed in the swinging door model but never
+back-ported.  This caused its RZ command, which is supposed to rotate
+the innermost “Z” ring to rotate in the wrong axis, as it needs to move
+around its parent Y axis, not the Z axis.  With that fix, and
+corresponding changes to the documentation, the new scripts are working
+mechanically correctly.
+
+Added support for the angular limit parameter on the Spin command.  It
+is an additional argument, specified in degrees, and if specified, when
+the rotation reaches the limit and stops, the LM_ME_OMEGALIMIT message
+is processed and the completion of rotation confirmed in local chat.
+
+Integrated the flSetCompMotion() and flGetCompMotion() functions from
+the Blobby Man Command Processor script (the only one in which these
+client-side functions presently appear).  Renamed the Move command to
+Trans and added a new Move command:
+    Move linkno <x, y, z> speed dist
+Specifying just the linkno displays the current motion.  Omitting the
+speed or specifying a speed of 0 cancels any current motion.
+
+Added a handler for LM_ME_COMPLETE to the Gimbals script.  If trace is
+set, a confirmation message for completion of the most recent translate
+or rotate command is shown in local chat.
+
+2020 October 2
+
+Integrated the Script Processor into Gimbals.  To save memory in the
+main script, I moved the processing of the Script command, which is in
+the Command Processor script in Blobby Man, into the Script Processor
+itself, eliminating the need for the LM_SP_RUN message to start a
+script.
+
+Added logic to suspend scripts after rotate and translate commands and
+resume upon receipt of the LM_ME_COMPLETE for them.
+
+Added a "gently" option to the Panic command which, if specified,
+causes only the reset of positions and rotations and doesn't terminate
+a running script.
+
+Added code to suspend script execution during the execution of a Spin
+command with a limit and all Move commands.  This is a little bit
+tricky because the execution of the Spin or Move causes LM_ME_COMPLETE
+messages for the intermediate rotations and translations.  We have to
+keep these from resuming the script.  I added a flag, scriptMotion,
+which keeps these messages from resuming the script until we have
+received the LM_ME_OMEGALIMIT or LM_ME_MOVELIMIT indicating the end of
+the Spin or Move command.
+
+2020 October 4
+
+This is the sound effect upon which the cranking sound for the marble
+machines is based:
+    https://www.soundeffectsplus.com/product/cartoon-cranking-01/
+
+2020 October 8
+
+This is the sound effect upon which the bumper in the tilt table
+mechanism is based.
+    https://www.soundeffectsplus.com/product/tennis-ball-hits-the-ground-01/
+
+2020 October 9
+
+A key insight which needs to be documented is the relationship between
+regular non-physical objects and physical objects.  If you build a
+mechanism of non-physical objects (which is about the only option,
+since a link set is all physical or non-physical, and moving parts
+within a physical object will make it jump all over the place, which is
+almost certainly not what you want), then moving physical objects will
+collide with parts of your mechanism and interact correctly *as long as
+they are stationary*.  But moving non-physical objects do not generate
+collisions with physical objects, since (I presume) the physics engine
+does not track their movement, which is in a sense instantaneous
+[llSetPos(), etc.].
+
+Consequently, if you have a mechanism with moving parts which needs to
+interact with physical objects as it moves, you'll have to handle all
+of the interactions yourself, which is hideously messy and complicated.
+An example of this is the marble tilt tables.  The tilt table
+mechanisms are non-physical, while the marbles are physical.  So, when
+the table moves, the marbles aren't aware of this and if the motion
+leaves them below or outside the enclosure, they fall to the ground.
+This is what I've come to call "losing our marbles".  The only way to
+work around this is for the mechanism to notify all of the marbles via
+a region message every time the table moves, allowing them to shift
+themselves (by going non-physical, moving, then re-enabling physical
+when the move is complete).  If you want to see an example of this,
+including all of the sequencing and timing considerations to correctly
+handle the asynchronous updating of mechanism components and marble
+positions in separate scripts, look at the Tilt Table and Marble
+scripts.
+
+In summary, it is possible to build objects like this, but it isn't
+easy and you'll need to carefully think about how updates occur in the
+proper sequence so things don't go pear shaped.
+
+2020 October 11
+
+Marbles continued to report collisions when already off board (say,
+when somebody walked over them sitting on the ground): fixed.
+
+The "Script pause" command in Script Processor ran afoul of one of the
+Ten Commandments of script processing, "Thou shalt not sleep."  It was
+simply doing a llSleep() before requesting the next command from the
+script, which seems reasonable since each script is its own logical
+process and it doesn't have anything else to do while waiting for the
+end of the pause.  But in an active, multi-script environment, lots of
+llMessageLinked() messages are flying around, and since there isn't any
+way to direct them to a specific script, they all end up in the Script
+Processor's incoming event queue.  That queue, recall, in LSL's
+faithful homage to the Commodore 64 and Windows 2.0, is limited to 64
+events and, if more are pending, new ones are silently discarded.  This
+means that while the script is sleeping, its event queue will fill up
+with un-received completion messages from movement or other activity,
+and when it wakes up it will have missed what's going on, leading to
+assorted confusion often resulting in simply getting stuck for no
+apparent reason.
+
+To avoid this, I redesigned the handling of Script pause to compute the
+time of the end of the pause and set pauseExpiry.  When set, upon
+completion of processing of the script command, the dataserver() event
+defers fetching the next line from the script and schedules a timer
+event for the expiration time which, when it arrives, clears
+pauseExpiry and fetches the next line, resuming the script execution.
+This leaves the script process responsive while awaiting the timer
+event, which allows it to receive (and mostly ignore) incoming link
+messages.
+
+Added a linkNick() function to Gimbals which allows specifying "X",
+"Y", "Z", and "Mech" as synonyms for the gimbal ring and complete
+mechanism link numbers in all commands requiring a link number.
+
+Revised the operation of flSetCompOmega() and flSetCompMotion() to be
+more consistent and interoperate more smoothly with regular set
+rotation and position calls.  The smooth motion calls now return a
+handle, just as flSetCompRot() and flSetCompPos() do.  This handle
+identifies the entire smooth motion operation.  As the motion
+progresses, each step will generate an LM_ME_COMPLETE message, but
+unlike previously, where these had random handles opaque to the client,
+each will now bear the handle of the in-progress smooth motion.  When
+the motion completes, a LM_ME_OMEGALIMIT or LM_ME_MOVELIMIT is sent
+which includes both the link number and the handle of the move
+operation.  (Note that you may receive one more LM_ME_COMPLETE for the
+move after the limit message, as the limit message is sent at the start
+of the final step of the move.)
+
+If you terminate an in-progress move (premature termination of a move
+or spin, or termination of a continuous spin), an LM_ME_OMEGALIMIT or
+LM_ME_MOVELIMIT will be sent to confirm the termination.  You can thus
+always count on a spin or move being paired with a termination message,
+except that a call with zero rotation or velocity, made to terminate
+in-progress motion, will not generate a termination message.
+
+2020 October 12
+
+Added the link number to the CSV string reply in LM_ME_COMPLETE
+messages, which now consists of:
+    Operation_code, handle, link_number
+Note that this is compatible with existing code which parses the reply
+as CSV and is interested only in the handle.
+
+Changed the order of the items returned for the LM_ME_OMEGALIMIT and
+LM_ME_MOVELIMIT messages to:
+    handle, link_number
+to be compatible with LM_ME_COMPLETE.
+
+Further rationalised the handling of completion messages for the
+incremental steps of the flSetCompOmega() and flSetCompMotion()
+operations.  Each step now generates an LM_ME_COMPLETE message with an
+Operation_code of LM_ME_ROTSTEP (134) or LM_ME_TRANSTEP (135)
+respectively, with the handle of the motion operation and the link
+number being moved.  This further distinguishes it from LM_COMPLETE
+messages for regular rotate and translate operations and avoids the
+need for the client to check handles in most cases.  Note that a final
+STEP message will usually be received for the last step after the
+...LIMIT message for a smooth motion is received.
+
+2020 October 19
+
+Integrated the latest version of the Script Processor into Blobby Man.
+This version contains its own auxiliary command processor, and allowed
+removing the handling of the Script command from Command Processor.
+
+Integrated the latest versions of the Mechanisms API, Mechanism, and
+Mechanism Auxiliary into Blobby Man.  Note that some of the other
+Blobby Man scripts contain portions of the API which I have not yet
+updated to the latest version.  I had to disable OMEGA and MOTION in
+the main script API and comment out some unused API functions to walk
+back from the brink of script memory exhaustion.
+
+Disabled the embedded command processor in the Blobby Man Animation
+Compiler script.  It was used only for debugging and test functions
+which I believe are now behind us.
+
+Integrated the "Panic gently" command into Blobby Man.
+
+2020 October 25
+
+Performed an audit to verify the latest versions of scripts and other
+common support files in each of the example mechanisms and presence of
+and agreement with copies in the Git repository.  Added symbolic links
+in the Git repository to master copies of material common to the
+examples.  Here, I cite them by name in the Git repository, with
+symbolic links indicated by (L).
+
+    Gimbals
+        examples/gimbals/notecards/demonstration.nc
+        examples/gimbals/notecards/mechanism_configuration.nc
+        examples/gimbals/scripts/gimbals.lsl
+        examples/gimbals/textures/pivotx.png
+        examples/gimbals/textures/pivoty.png
+        examples/gimbals/textures/pivotz.png
+        notecards/calculator.nc (L)
+        notecards/mechanism.nc (L)
+        scripts/calculator/calculator.lsl (L)
+        scripts/mechanism.lsl (L)
+        scripts/mechanism_auxiliary.lsl (L)
+        scripts/script_processor.lsl (L)
+
+    Door
+        examples/door/notecards/demonstration.nc
+        examples/door/notecards/mechanism_configuration.nc
+        examples/door/scripts/door_assembly.lsl
+        examples/gimbals/textures/pivotz.png
+        notecards/calculator.nc (L)
+        notecards/mechanism.nc (L)
+        scripts/calculator/calculator.lsl (L)
+        scripts/mechanism.lsl (L)
+        scripts/mechanism_auxiliary.lsl (L)
+        scripts/script_processor.lsl (L)
+        sounds/creaking_door/creaking_door.wav
+
+    Marbles
+        examples/marble/scripts/marble.lsl
+
+        Marble Madness
+            examples/marbles/marble_madness/notecards/mechanism_configuration.nc
+            examples/marbles/marble_madness/scripts/marble_madness.lsl
+            examples/marbles/sounds/crank/crank_1_1.wav (L)
+            notecards/calculator.nc (L)
+            notecards/mechanism.nc (L)
+            scripts/calculator/calculator.lsl (L)
+            scripts/mechanism.lsl (L)
+            scripts/mechanism_auxiliary.lsl (L)
+
+        Tilt Table
+            examples/marbles/tilt_table/notecards/mechanism_configuration.nc
+            examples/marbles/tilt_table/scripts/tilt_table.lsl
+            notecards/calculator.nc (L)
+            notecards/mechanism.nc (L)
+            examples/marbles/sounds/crank/crank_1_1.wav (L)
+            notecards/calculator.nc (L)
+            notecards/mechanism.nc (L)
+            scripts/calculator/calculator.lsl (L)
+            scripts/mechanism.lsl (L)
+            scripts/mechanism_auxiliary.lsl (L)
+
+            Bumper
+                examples/marbles/tilt_table/bumper/scripts/bumper.lsl
+                examples/marbles/tilt_table/bumper/sounds/bounce/bounce.wav
+
+    Blobby Man
+        examples/blobby_man/notecards/blobby_man.nc
+        examples/blobby_man/notecards/mechanism_configuration.nc
+        examples/blobby_man/notecards/pose_scripts/script_attention.nc
+        examples/blobby_man/notecards/pose_scripts/script_jumping.nc
+        examples/blobby_man/notecards/pose_scripts/script_salute.nc
+        examples/blobby_man/notecards/pose_scripts/script_sit_ground.nc
+        examples/blobby_man/notecards/pose_scripts/script_wave.nc
+        examples/blobby_man/scripts/animation_BVH.lsl
+        examples/blobby_man/scripts/animation_compiler.lsl
+        examples/blobby_man/scripts/blobby_man.lsl
+        examples/blobby_man/scripts/command_processor.lsl
+        notecards/calculator.nc (L)
+        notecards/mechanism.nc (L)
+        scripts/calculator/calculator.lsl (L)
+        scripts/imort_export.lsl (L)
+        scripts/mechanism.lsl (L)
+        scripts/mechanism_auxiliary.lsl (L)
+        scripts/script_processor.lsl (L)
+
+            Deployer
+                examples/blobby_man/deployer/notecards/blobby_man_geometry.nc
+                examples/blobby_man/deployer/scripts/blobby_man_deployer.lsl
+                examples/blobby_man/deployer/textures/BlobbyMan.png
+
+                Blobby Sphere
+                    examples/blobby_man/deployer/blobby_sphere/scripts/blobby_component.lsl
+
+2020 October 28
+
+In the Blobby Man's Command Processor, deleted obsolete commented-out
+code for processing of the Script command, which has been moved to the
+Script Processor.
+
+Integrated the latest version of the Mechanisms API into the Blobby Man
+Command Processor, including commenting out functions and storage which
+are not used by the commands in this file.
+
+Added code to the Blobby Man Command Processor to clear the Undo stack
+for the Joint command when notification of a Panic command is received.
+Since Panic completely resets all components, it doesn't make sense to
+try to undo across it.
+
+2020 October 30
+
+Updated chat_to_anim_script.pl to correctly process animation chat logs
+where Frame 0 is used as a reference frame and thus not output as an
+animation frame.  We now expect to see Frame 1 as the first compiled
+frame, and adjust the length accordingly.
+
+Disabled the built-in command processor in Blobby Man script Animation
+BVH with lslconf.pl tag COMMAND_PROCESSOR.  The command processor was
+used only for debugging in stand-alone mode.  Now that we have control
+over this module from the main script, there is no need to leave the
+command processor and all of its ancillary machinery (including a
+dedicated chat command channel, /42 [well, you wanted the Ultimate
+Answer, didn't you?]) clogging up the memory of this script.
+
+2020 October 31
+
+Completed implementation of proper handling of the reference frame in
+BVH animations in Blobby Man.  The first frame of a BVH animation is
+not played, and serves to provide the position and orientation of the
+root ("Hips") component to which these channels in all subsequent
+frames are relative.  When processing Frame 0, we save these values but
+do not otherwise process the frame.  On subsequent frames, they are
+applied to translate and rotate the Hips component, providing the
+ability to globally move or rotate the animation by adjusting these
+values in the reference frame.
+
+Added a warning if the user enters a nonexistent name in the "Animation
+load" command instead of letting the script error pop-up whack him in
+the face.
+
+Restored the fromScript logic in Blobby Man's processCommand() so
+commands from scripts are distinguished from those entered in local
+chat.
+
+Added a warning if the user tries to run or repeat a nonexistent
+animation script in Blobby Man.  Previously, this was just silently
+ignored.  The code to implement this is sneaky because animation
+scripts may have names like "Animation: Wave 1/2", and we can't
+directly look these up in the inventory, so I integrated the logic that
+runs animations with that to list them.
+
+Modified bvh_to_bvm.pl so that it labels the frames it generates in the
+channels section starting with Frame 0, not Frame 1.  We don't actually
+check these numbers at present, so no modifications to Animation BVH in
+Blobby Man was required.  But since we refer to Frame 0 in many places
+as the reference frame, labeling it consistently in BVM files will
+avoid confusion.
+
+Re-made all of the BVM animations based upon the Second Life standard
+internal animations with the current version of bvh_to_bvm.pl and
+tested with the updated importer.  This process cleaned up several
+curiosities in the earlier imports and from a run-through and visual
+inspection they all look correct.  In the process, I discovered that
+our SL_Avatar_Tpose.bvh file, which is not a standard animation but is
+supplied with the standard avatar kit, contains only a reference frame
+and no actual animation frame.  According to the Second Life
+documentation, this should do nothing, as the reference frame is never
+played, but in fact, importing it into Second Life produces an
+animation which does play the reference frame.  Rather than add a
+horrible kludge to the importer to handle this ill-defined file, I just
+added a second frame identical to the reference frame, renaming the
+original file SL_Avatar_Tpose_ORIG.bvh and saving the new one as
+SL_Avatar_Tpose.bvh.  This file imports correctly.
+
+The changes to not play the reference frame of animations broke several
+things related to compilation of animations and playing of the
+resulting compiled animation scripts.  The main change is that compiled
+animation scripts no longer contain a Frame 0, since it is used purely
+to set the orientations in Frame 1 and subsequent frames which are
+played.  This required several changes in the embedded
+animation_player.lsl stub which is added to animation segments by
+chat_to_anim_script.pl when they are produced.  The code which starts
+the first segment of a compiled animation and restarts a looping
+animation in blobby_man.lsl required modification to start playing with
+Frame 1 instead of the reference frame (Frame 0) which doesn't appear
+in the compiled animation.
+
+While I was at it, I disabled the script memory diagnostic output in
+animation_player.lsl on lslconf.pl parameter MEMORY_USAGE.  We've
+pretty much sorted out memory usage of compiled animation segments, so
+there's no need to clutter the chat with all that output every time we
+reset the scripts.
+
+These changes to compiled animation scripts require they all be
+re-generated from the original BVH/BVM files, but we needed to do that
+anyway just to be sure they contained the latest version of the stub
+code and that we didn't break anything since they were last compiled.
+
+2020 November 1
+
+Based upon the examples in:
+    https://engineering.giphy.com/how-to-make-gifs-with-ffmpeg/
+I began to experiment with making an animated GIF for the Marketplace
+page.  My current experimental command is:
+    cd ..../SecondLife/Mechanism/videos
+    ffmpeg -ss 490.5 -t 6.5 -filter_complex \
+     "[0:v] fps=12,scale=640:-1,split [a][b];[a] palettegen [p];[b][p] paletteuse" \
+     -i Mechanisms_HD1.mp4 -f gif /tmp/blobflip.gif
+which produces a GIF of 718K, well below the 1 Mb limit for the
+Marketplace. This is just a proof of concept; fine tuning hasn't even
+begun.
+
+Added a proper Help subsystem in the Blobby Man Command Processor.  The
+Help command allows you to request help on Blobby Man, Calculator, or
+Mechanisms, and asks which if you don't specify or enter an unknown
+help topic.
+
+For consistency with the "Animation run/repeat" and "Script run"
+commands, added code to supply the "BVH: " prefix for animations
+specified in the "Animation load" command if it is omitted.
+
+Animation Compiler in Blobby Man had the full suite of animation script
+decompression functions enabled purely for test code which is now
+disabled.  The decompression code is used only as a model and test jig
+for the actual code included in the animation_player.lsl stub included
+in animation scripts generated by chat_to_anim_script.pl.  I disabled
+the code with lslconf.pl parameter ANIM_EXPAND_FRAME.  It can be
+re-enabled if needed for testing in the future.
+
+Animation script code generated by Animation Compiler had inconsistent
+spacing between numbers, with spaces after commas in substrings
+generated by llList2CSV() and no spaces between nsuch groups.  I
+replaced llList2CSV() with my own list2CSVint() function which doesn't
+include the spaces.  While eliminating the spaces saves no memory in
+the compiled script code, it does reduce the script source code size,
+which allows packing more code in a script without exceeding the
+maximum script source file size limit.
+
+To avoid race conditions between the Animation Compiler editing its
+voluminous output and displaying it on local chat and the asynchronous
+code in Blobby Man which is generating the frames for it to compile, I
+added a message, LM_AC_FRAME (175), which is sent by Animation Compiler
+when it completes processing a frame.  The string argument contains, in
+CSV format, the number of the frame just compiled and a flag indicating
+whether this is the last frame of the animation.
+
+Added code to Blobby Man to replace the hideously ugly llSleep(3) in
+animation compilation with event driven logic where the receipt of the
+LM_AC_FRAME at the compliation of a frame triggers loading and
+compliation of the next.  Re-ran generation of the the CMU-derived
+Jumping Jacks animation script end-to-end through all tools to verify
+things still worked.  They did.
+
+The main Blobby Man script preprocessed its command arguments with
+fixargs(), but actually contained no commands which require the
+consolidation of vector arguments.  I removed fixargs() and installed
+it in Command Processor, whose Joint command does require such
+processing.  This removes that overhead from Blobby Man, where script
+memory was getting tight, to Command Processor, where it is abundant.
+Note that Import Export, which also requires fixargs() processing,
+already contained its own copy and ignored the arguments from the main
+script, so no changes to it were required.
+
+Extended the "Boot" command in Blobby Man to reset all scripts in the
+object, then wait a second, and finally reset the main script.  The
+delay is intended to ensure all of the other scripts who care are ready
+to receive the LM_ME_CONFIG message when it arrives after the mechanism
+reconfiguration triggered by the reset of the main script is complete.
+
+2020 November 3
+
+Compiling the 88_07_cartwheel_double.bvh animation revealed that our
+clever code, added on 2020-11-01 to suppress unneeded spaces in
+compiled animation chat transcripts, tripped up our even cleverer code
+which took advantage of the ability of llList2CSV to encode a list
+regardless of whether it contained integers or vectors.  The code
+handled only integers, and resulted in animations which involved
+relative translations of greater than 3.2767 metres (the largest value
+we can compress into an integer displacement) being garbled and random
+body parts being severed and ending up in a pile around the origin.  I
+replaced the integer-only list2CSVint() with a new list2CSVdense()
+which explicitly elides spaces from the output of llList2CSV().  This
+should not be called on lists containing strings which may have
+embedded spaces, but that case never occurs in compiled animations.
+
+2020 November 5
+
+When compiling animations, it was possible, due to congestion in the
+link message queue of the Mechanism script, for LM_ME_CHANGED messages
+reporting changes from animation-specified joint adjustments to arrive
+after the LM_AC_END message from Blobby Man which triggers processing
+and output of the complete animation frame.  This resulted in a frame
+which contained only some of the joint positions for the original
+frame.  Since frame to frame changes are usually small, and the changes
+would usually made up in the next frame, this wasn't very obvious on
+inspection and showed up mainly when looping animations where the loop
+from the last frame back to the first might show some of the original
+T-pose incompletely updated in the first frame.
+
+To correct this, avoiding all possible timing problems and eschewing
+rubbery and vulnerable timer-based nonsense, in the BVH animation
+player in the main Blobby Man script I eliminated the all-in-one
+jPlayFrame() function and replaced it with two functions:
+jPlayFrameIncStart(), which begins the process of moving the joints of
+the model to the positions prescribed by the frame, and
+jPlayFrameIncNext(), which transmits the command(s) for the next joint
+from the frame to the model by calling jRot() for the joint.
+
+jRot(), in turn, when it sends the flSetCompRot() for the joint (and
+flsetCompPos() for translation of the root joint only), saves the
+handles for these commanded movements in jPlayFrameIntHandR and
+jPlayFrameIntHandT respectively and increments jPlayFrameIntPend to
+indicate a movement in progress.  When it returns, jPlayFrameIncStart()
+tests whether movement is pending.  If not, this was a dummy joint
+(such as neckDummy, which does not move), and proceeds immediately to
+the next joint.  If movement is pending, however, it returns TRUE and
+the animation code exits and awaits the LM_ME_COMPLETE message(s) for
+the pending movement(s).  When the completion message(s) are received
+and jPlayFrameIntPend is decremented and, when zero,
+jPlayFrameIncNext() is called to move the next joint.  This process
+continues until all joints have been moved, whereupon
+jPlayFrameIncNext() returns FALSE and end of frame processing
+(including compilation of an animation script, if in progress) is
+performed.
+
+This guarantees that all joint motion is complete at the time the
+animation frame is compiled and that the frame thus represents the
+complete state commanded by the frame.  It also ensures there are at
+most two messages pending for the Mechanisms script, guarding against
+loss of messages due to queue overflow.  This may seem like a lot of
+extra machinery, but it's actually only a few lines more code than what
+it replaced and, if it runs any slower, the difference isn't
+perceptible to me.  The overwhelming majority of the overhead in
+playing an animation from a BVH file is parsing the frame information
+and transforming it into joint rotation commands, then propagating them
+through the mechanism, so the extra overhead in properly synchronising
+motion commands doesn't make a visible difference.
+
+2020 November 6
+
+Rebuilt all of the CMU-derived animations with the fixed animation
+compiler.
+    124_02_baseball_pitch.bvh
+    124_07_baseball_swing.bvh
+    88_07_cartwheel_double.bvh
+    86_05_jumping_jacks.bvh
+    64_01_golf_swing.bvh
+
+In the process of remaking these animations, I discovered that
+correcting the previously lost frame information increased the sizes of
+compiled frames and required reducing the maximum frames per compiled
+animation script segment from 20 to 19.
+
+Revised chat_to_anim_script.pl to name animations scripts with a single
+segment as _1_1 instead of the confusing _1.
+
+Rebuilt the following Second Life standard animations with the fixed
+animation compiler.
+    SL_Avatar_Tpose.bvh
+    avatar_backflip.bvh
+    avatar_bow.bvh
+    avatar_dance1.bvh
+    avatar_female_walk.bvh
+    avatar_hello.bvh
+    avatar_jumpforjoy.bvh
+    avatar_peace.bvh
+    avatar_salute.bvh
+    avatar_sit_female.bvh
+    avatar_sit_ground.bvh
+    avatar_walk.bvh
+All of these built and played without problems.
+
+2020 November 7
+
+Created local development Git repository in:
+    ~/w/SecondLife/Mechanism/git
+with:
+    git init
+
+Logged on to github.com.
+
+Created a new repository:
+    mechanisms
+with access URLs:
+    HTTPS: https://github.com/Fourmilab/mechanisms.git
+    SSH:   git@github.com:Fourmilab/mechanisms.git
+
+Linked the local repository to the GitHub archive:
+    git remote add origin git@github.com:Fourmilab/mechanisms.git
+
+Committed the *.md files in the repository root and the
+marketplace/images files to which they link.
+
+Confirmed that my local "git sync" command works with the remote
+repository.
+
+The documents in the repository root now work properly.
+
+Verified the master copies of the Marketplace listing against those
+posted and committed them to the Git repository.
+
+Committed the Mechanisms and Calculator User Guides to the Git
+repository.
+
+Committed the master Mechanisms scripts to the Git repository.
+
+Committed the Gimbals, Door, Marble Madness, and Tilt Table examples to
+the Git repository.
+
+2020 November 8
+
+The Animation load, play, compile, and run commands were not using the
+scriptSuspend mechanism to pause script execution until they completed.
+This caused a script which ran multiple animations to make a mess of
+things with multiple animations running at once.  I added logic to set
+scriptSuspend whens starting the lengthy process and call
+scriptResume() when done.  Note that the "Animation repeat" command to
+loop an animation does not suspend the script.  This allows starting a
+loop and then explicitly stopping it later after, say, a Script pause
+has expired.
+
+Created an "Animations Demo" script to run all of the standard
+animations in sequence.  The animations which are intended to be looped
+("Female Walk", "Jumping Jacks", "Walks") are run with an "Animation
+repeat" which is stopped an appropriate time later.
+
+Added the "touch to run demonstration" feature to Blobby Man.  Touching
+runs the "Animations Demo" script.
+
+Committed the Blobby Man example to the Git repository.
+
+Released version 1.0 to the Marketplace.
+
+
+
+To do:
+
+In Blobby Man, replace joint name arguments in functions by jindex,
+avoiding repeated look-ups by name.  (This is probably unwarranted
+premature optimisation considering where these calls are made.)
+
