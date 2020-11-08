@@ -1,0 +1,10 @@
+Files in this directory are edited extracts from the CMU motion
+capture archive.  They start with the numbered segment given in
+the name, but have usually been extracted from a larger capture,
+edited in various ways with bvhacker, and sometimes post-processed
+with various tools to adjust orientation, movement, and optimise
+for looping.
+
+The files in this directory use the original CMU skeleton structure
+and channel assignments.  Transformation to the Second Life animation
+format is performed when they are processed by CMUtoSL.pl.

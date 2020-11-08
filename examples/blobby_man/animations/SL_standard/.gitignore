@@ -1,0 +1,6 @@
+
+#   Exclude generated files from the Git repository
+
+/*.bvm
+trace.out
+ANIM_SCRIPT/*.lsl

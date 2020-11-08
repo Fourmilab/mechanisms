@@ -1,0 +1,9 @@
+This directory contains copies of the Second Life standard internal
+animations, all of which can be downloaded from:
+    http://static-secondlife-com.s3.amazonaws.com/downloads/avatar/bvh_files.zip
+The animations here are unmodified copies of these and are included
+here purely to make the build process self-contained.
+
+The file SL_Avatar_Tpose.bvh, with the "T pose", is supplied with the
+Second Life standard avatar mesh, which you can download from:
+    http://static-secondlife-com.s3.amazonaws.com/downloads/avatar/avatar_mesh.zip

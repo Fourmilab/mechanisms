@@ -1,0 +1,22 @@
+This directory is used to build Blobby Man animation scripts from
+chat transcripts captured with the "Animation compile" command.  The
+complete transcript (any unrelated chat traffic is automatically
+ignored: it need not be deleted) is placed in a .chat file.  This
+is then processed with the ../../tools/chat_to_anim_script.pl program,
+which writes one or more LSL script files with names based upon the
+animation name from the chat transcript (with any "BVH: " prefix
+elided).
+
+Since an individual script file cannot exceed 64 Kb of script memory,
+long animations are automatically broken into multiple segments with
+names like:
+    Golf_Swing-1_3.lsl
+    Golf_Swing-2_3.lsl
+    Golf_Swing-3_3.lsl
+When these are imported into Second Life and placed in the inventory
+of the Blobby Man, they are usually given names like:
+    Animation: Golf Swing 1/3
+etc.  You must include the "Animation: " prefix in order for the
+compiled animation to be recognised by the "Animation run" command.
+You can then play the animation with:
+    /1721 Animation play Golf Swing

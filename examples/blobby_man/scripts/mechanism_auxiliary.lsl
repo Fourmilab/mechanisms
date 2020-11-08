@@ -1,0 +1,1 @@
+../../../../git/scripts/mechanism_auxiliary.lsl

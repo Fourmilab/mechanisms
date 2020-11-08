@@ -1,0 +1,9 @@
+
+This directory contains unmodified copies of the CMU motion capture
+database converted to DAZ forman and published at:
+
+    https://www.sites.google.com/a/cgspeed.com/cgspeed/motion-capture/daz-friendly-release
+
+They are included purely to permit this directory tree to be 
+self-contained without the need to include the entire 5.2 gigabyte 
+archive, most of which we don't use.
