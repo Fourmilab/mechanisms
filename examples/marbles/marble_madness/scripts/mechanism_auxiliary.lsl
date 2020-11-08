@@ -1,1 +1,1 @@
-../../../../git/scripts/mechanism_auxiliary.lsl
+../../../../scripts/mechanism_auxiliary.lsl

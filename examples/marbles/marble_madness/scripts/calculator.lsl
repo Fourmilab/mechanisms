@@ -1,1 +1,1 @@
-../../../../git/scripts/calculator/calculator.lsl
+../../../../scripts/calculator/calculator.lsl
