@@ -483,7 +483,7 @@ with the API using the following function calls.
 
     flMechInit(key owner)
         Initialise the Fourmilab Mechanisms scripts.  The mechanism
-        configuration is read from the “"Mechanism Configuration”
+        configuration is read from the “Mechanism Configuration”
         notecard (if any) in the root prim of the link set.  Any error
         messages from this and subsequent API calls are sent to the
         user with key owner, which is usually specified as
